@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
+  <meta name="theme-color" content="#232424">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" href="images/logo.png">
+  <link rel="apple-touch-icon" href="images/icon-192.png">
+  <title>American Caffetteria · Термез | Бургеры, Лаваш, Чайная карта и Кофе до 03:00 (100% Halal)</title>
+
+  <!-- Telegram Mini Web App SDK (Auto-detects Telegram environment) -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+  <!-- Tailwind CSS v4 Browser Runtime -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Canvas Confetti -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.4/dist/confetti.browser.min.js"></script>
+
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="style.css?v=33">
+</head>
+<body class="paper text-[#232424] antialiased selection:bg-[#EB2A2A] selection:text-white">
+
+  <!-- Top Scroll Reading Progress -->
+  <div id="scroll-progress"></div>
+
+  <!-- MASTHEAD / HEADER -->
+  <header id="top" class="px-3 sm:px-6 md:px-12 pt-2 sm:pt-3 pb-2.5 border-b-2 border-[#232424] sticky top-0 bg-[#DEDBD4]/95 backdrop-blur-md z-40">
+    <div class="flex flex-wrap items-center justify-between gap-1.5 text-[11px] sm:text-[12px] uppercase tracking-wider pb-1.5 border-b border-[#232424]/15">
+      <div class="flex items-center gap-1.5 min-w-0">
+        <span class="pulse-dot flex-shrink-0" id="header-beacon"></span>
+        <span id="live-date" class="truncate">Термез · Сурхандарья</span>
+        <span class="px-1.5 py-0.5 bg-[#166534] text-white text-[9px] sm:text-[10px] font-bold rounded tracking-wider whitespace-nowrap flex-shrink-0" data-i18n="halal_badge">100% ХАЛЯЛЬ</span>
+      </div>
+
+      <!-- Sound Toggle & Trilingual Switcher (RU / UZ / EN) -->
+      <div class="flex items-center gap-1.5 flex-shrink-0">
+        <button type="button" id="sound-toggle-btn" class="sound-toggle-btn cursor-pointer" title="Включить / выключить звуковые эффекты">
+          <i class="ti ti-volume" id="sound-icon"></i>
+          <span id="sound-text">Звук</span>
+        </button>
+
+        <div class="flex items-center gap-0.5 bg-[#E8E5DE] p-0.5 rounded border border-[#232424]/30">
+          <button type="button" class="lang-btn px-1.5 py-0.5 text-[10px] sm:text-[11px] font-bold tracking-wider rounded transition-all cursor-pointer bg-[#232424] text-[#DEDBD4]" data-lang="ru">
+            RU
+          </button>
+          <button type="button" class="lang-btn px-1.5 py-0.5 text-[10px] sm:text-[11px] font-bold tracking-wider rounded transition-all cursor-pointer text-[#232424] opacity-60" data-lang="uz">
+            UZ
+          </button>
+          <button type="button" class="lang-btn px-1.5 py-0.5 text-[10px] sm:text-[11px] font-bold tracking-wider rounded transition-all cursor-pointer text-[#232424] opacity-60" data-lang="en">
+            EN
+          </button>
+        </div>
+      </div>
+
+      <div class="hidden md:flex items-center gap-3 text-[11px]">
+        <span class="opacity-75" data-i18n="top_hours">Ежедневно: 08:00–03:00</span>
+        <a href="tel:+998908220101" class="font-bold text-[#EB2A2A] hover:underline flex items-center gap-1 whitespace-nowrap">
+          <i class="ti ti-phone"></i> +998 90 822 01 01
+        </a>
+      </div>
+    </div>
+
+    <!-- Main Navigation Bar -->
+    <div class="pt-2 flex items-center justify-between gap-2">
+      <!-- Brand Logo -->
+      <a href="#top" class="flex items-center gap-2 text-[#232424] no-underline group min-w-0">
+        <img
+          src="images/logo_3x4.png"
+          width="36"
+          height="48"
+          alt="American Caffetteria Logo"
+          class="brand-logo-3x4 w-9 h-12 sm:w-10 sm:h-14 object-cover border-2 border-[#232424] shadow-sm flex-shrink-0"
+        />
+        <div class="min-w-0">
+          <span class="f-d font-bold tracking-[0.04em] uppercase text-[19px] sm:text-[26px] md:text-[30px] leading-none block truncate">
+            AMERICAN <span class="text-[#EB2A2A]">CAFFETTERIA</span>
+          </span>
+          <span class="text-[9px] sm:text-[10px] uppercase tracking-[0.14em] opacity-75 block truncate">
+            Termez · 100% Halal
+          </span>
+        </div>
+      </a>
+
+      <!-- Desktop Nav Links -->
+      <nav class="hidden xl:flex items-center gap-5 f-d uppercase tracking-wider text-[16px] font-medium">
+        <a href="#v2-featured" class="nav-link text-[#232424]" data-i18n="nav_featured">Хит Фастфуда</a>
+        <a href="#v2-menu" class="nav-link text-[#232424]" data-i18n="nav_menu">Меню</a>
+        <a href="#v2-about" class="nav-link text-[#232424]" data-i18n="nav_about">О кафе</a>
+        <a href="#v2-gallery" class="nav-link text-[#232424]" data-i18n="nav_gallery">Атмосфера</a>
+        <a href="#v2-contacts" class="nav-link text-[#232424]" data-i18n="nav_contacts">Контакты</a>
+      </nav>
+
+      <!-- Action Buttons: Orders History, Telegram Registration & Cart -->
+      <div class="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+        <!-- Order History / Live Status Tracker Trigger -->
+        <button type="button" class="open-orders-history-trigger btn-animated bg-[#232424] hover:bg-[#EB2A2A] text-[#DEDBD4] hover:text-white px-2.5 sm:px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-sm cursor-pointer whitespace-nowrap" title="Buyurtmalarim / Мои заказы">
+          <i class="ti ti-package text-[15px]"></i>
+          <span class="f-d font-bold uppercase tracking-wider text-[13px] sm:text-[14px]" data-i18n="nav_my_orders">Мои заказы</span>
+          <span id="my-orders-badge" class="bg-[#EB2A2A] text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full hidden">0</span>
+        </button>
+
+        <!-- Telegram Registration / User Profile Trigger -->
+        <button type="button" id="header-reg-btn" class="open-reg-trigger btn-animated bg-[#229ED9] hover:bg-[#1a85b8] text-white px-2.5 sm:px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-sm cursor-pointer whitespace-nowrap" title="Регистрация через Telegram / Номер телефона">
+          <i class="ti ti-brand-telegram text-[15px]"></i>
+          <span id="header-reg-label" class="f-d font-bold uppercase tracking-wider text-[13px] sm:text-[14px]" data-i18n="nav_reg">Профиль</span>
+        </button>
+
+        <!-- Cart Trigger Button -->
+        <button type="button" class="open-cart-trigger cart-trigger-btn btn-animated btn-shimmer bg-[#232424] text-[#DEDBD4] hover:bg-[#EB2A2A] hover:text-white px-2.5 sm:px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-sm cursor-pointer whitespace-nowrap">
+          <i class="ti ti-shopping-bag text-[15px]"></i>
+          <span class="f-d font-bold uppercase tracking-wider text-[13px] sm:text-[14px]" data-i18n="nav_cart">Корзина</span>
+          <span class="cart-badge bg-[#EB2A2A] text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full hidden">0</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- BREAKING NEWS RETRO TICKER -->
+  <div class="marquee-wrap">
+    <div class="marquee-content">
+      <span class="marquee-item"><i class="ti ti-flame text-[#EB2A2A]"></i> AMERICAN CAFFETTERIA · ТЕРМЕЗ</span>
+      <span class="marquee-item">★ 12 ОТДЕЛЬНЫХ КАТАЛОГОВ: БУРГЕРЫ, ЛАВАШ, ЧАЙНАЯ КАРТА, КОФЕ, ЛИМОНАДЫ, ПИДЕ И ДЕСЕРТЫ</span>
+      <span class="marquee-item">★ РЕГИСТРАЦИЯ ЧЕРЕЗ TELEGRAM БОТ + ГЕОЛОКАЦИЯ</span>
+      <span class="marquee-item">★ ДОСТАВКА ПО ТЕРМЕЗУ ДО 03:00 НОЧИ (100% HALAL)</span>
+      <span class="marquee-item"><i class="ti ti-flame text-[#EB2A2A]"></i> AMERICAN CAFFETTERIA · ТЕРМЕЗ</span>
+      <span class="marquee-item">★ 12 ОТДЕЛЬНЫХ КАТАЛОГОВ: БУРГЕРЫ, ЛАВАШ, ЧАЙНАЯ КАРТА, КОФЕ, ЛИМОНАДЫ, ПИДЕ И ДЕСЕРТЫ</span>
+      <span class="marquee-item">★ РЕГИСТРАЦИЯ ЧЕРЕЗ TELEGRAM БОТ + ГЕОЛОКАЦИЯ</span>
+      <span class="marquee-item">★ ДОСТАВКА ПО ТЕРМЕЗУ ДО 03:00 НОЧИ (100% HALAL)</span>
+    </div>
+  </div>
+
+  <!-- HERO SECTION -->
+  <section class="px-4 sm:px-8 md:px-12 pt-5 sm:pt-8 pb-8 sm:pb-12 grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] gap-6 sm:gap-8 lg:gap-12 items-center reveal">
+    <div>
+      <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#232424] text-[#DEDBD4] text-[11px] sm:text-[12px] font-medium mb-2.5">
+        <img src="images/logo.png" width="16" height="16" alt="Logo" class="w-4 h-4 rounded-full object-cover">
+        <span data-i18n="hero_eyebrow">Американский стритфуд и кофейня · Термез · 100% Halal</span>
+      </div>
+
+      <h1 class="f-d font-bold uppercase text-[34px] sm:text-[48px] md:text-[58px] leading-[0.92] mt-1" data-i18n="hero_title">
+        Сочные бургеры, хрустящий лаваш и авторский чай до 03:00 ночи
+      </h1>
+
+      <p class="mt-3 sm:mt-4 text-[13.5px] sm:text-[15.5px] leading-[1.6] text-[#232424]/90" data-i18n="hero_p1">
+        American Caffetteria — легендарное кафе в центре Термеза. Мы выпекаем свежие булочки, жарим котлеты из 100% отборной халяльной говядины на открытом гриле и доставляем горячие блюда до 03:00 ночи.
+      </p>
+
+      <!-- Compact Action Buttons (No AI Agent) -->
+      <div class="mt-4 sm:mt-5 flex flex-wrap items-center gap-2">
+        <a href="#v2-menu" class="btn-animated btn-shimmer bg-[#232424] text-[#DEDBD4] hover:bg-[#EB2A2A] hover:text-white px-4 py-2 rounded-lg font-bold f-d uppercase text-[14px] sm:text-[16px] tracking-wider shadow flex items-center gap-1.5 no-underline">
+          <i class="ti ti-layout-grid text-[16px]"></i>
+          <span data-i18n="hero_btn_menu">Посмотреть меню</span>
+        </a>
+
+        <button type="button" class="open-reg-trigger btn-animated bg-[#229ED9] hover:bg-[#1a85b8] text-white px-4 py-2 rounded-lg font-bold f-d uppercase text-[14px] sm:text-[16px] tracking-wider shadow flex items-center gap-1.5 cursor-pointer">
+          <i class="ti ti-brand-telegram text-[16px]"></i>
+          <span data-i18n="hero_btn_tg_reg">Регистрация в Telegram</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Hero Right Graphic: Studio Photo + Compact Badges -->
+    <div class="relative flex flex-col items-center justify-center">
+      <div class="relative w-[210px] h-[210px] sm:w-[270px] sm:h-[270px] md:w-[310px] md:h-[310px]">
+        <img
+          src="images/food/american_burger.jpg"
+          alt="Signature American Burger"
+          class="w-full h-full rounded-full object-cover hero-img shadow-xl border-3 border-[#232424]"
+          loading="eager"
+        />
+
+        <!-- Compact Floating Rating Badge -->
+        <div class="absolute -bottom-1 -left-1 sm:left-1 w-[62px] h-[62px] sm:w-[74px] sm:h-[74px] rounded-full bg-[#EB2A2A] text-white grid place-items-center text-center rotate-[-8deg] badge-float shadow-md border-2 border-[#232424]">
+          <div>
+            <p class="f-d font-bold text-[20px] sm:text-[24px] leading-none">5.0</p>
+            <p class="f-d uppercase tracking-wider text-[8px] opacity-95">
+              Halal · Termez
+            </p>
+          </div>
+        </div>
+
+        <!-- Sleek Compact Status Pill -->
+        <div class="hero-status-pill absolute -top-1 -right-1 bg-[#E8E5DE] px-2.5 py-1 text-center shadow-md border-2 border-[#232424] rounded-lg">
+          <p class="f-d uppercase tracking-wider text-[10px] flex items-center justify-center gap-1 leading-none">
+            <span class="pulse-dot" id="hero-beacon" style="margin-right:2px;width:7px;height:7px;"></span>
+            <span class="font-bold text-[#EB2A2A]" id="hero-status-word">Открыто</span>
+          </p>
+          <p class="text-[9px] opacity-80 leading-tight mt-0.5" id="hero-status-note">
+            до 03:00
+          </p>
+        </div>
+      </div>
+
+      <figcaption class="text-[11px] sm:text-[12px] italic text-center mt-2.5 text-[#232424]/75" data-i18n="hero_caption">
+        Фирменный Американский Бургер на гриле со свежей выпечкой (100% Halal)
+      </figcaption>
+    </div>
+  </section>
+
+  <!-- FEATURED SINGLE FAST-FOOD DISH SHOWCASE -->
+  <section class="px-4 sm:px-8 md:px-12 pb-8 sm:pb-12 reveal" id="v2-featured">
+    <div class="max-w-[1140px] mx-auto sheet border-2 border-[#232424] rounded-xl overflow-hidden shadow-lg grid grid-cols-1 lg:grid-cols-[1.05fr_1fr]">
+      <!-- Studio Enhanced Single Fast-Food Photo (Clean & Unobstructed) -->
+      <div class="relative min-h-[210px] sm:min-h-[270px] bg-[#073B3A] overflow-hidden group">
+        <img
+          src="images/food/american_burger.jpg"
+          alt="Американский Бургер · Главное блюдо фастфуда"
+          class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+        />
+        <div class="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+          <span class="px-2 py-0.5 rounded bg-[#EB2A2A] text-white f-d uppercase tracking-wider font-bold text-[11px] shadow">
+            ★ ХИТ ФАСТФУДА
+          </span>
+        </div>
+        <div class="absolute bottom-2.5 left-2.5 right-2.5 bg-[#232424]/85 backdrop-blur-sm text-[#DEDBD4] px-2.5 py-1 rounded-md border border-[#DEDBD4]/15 flex items-center justify-between gap-2">
+          <span class="f-d text-[14px] sm:text-[16px] font-bold uppercase tracking-wide truncate" id="featured-card-img-title">АМЕРИКАНСКИЙ БУРГЕР</span>
+          <span class="px-1.5 py-0.5 rounded bg-[#166534] text-white text-[10px] font-bold whitespace-nowrap flex-shrink-0">410г · Halal</span>
+        </div>
+      </div>
+
+      <!-- Featured Fast-Food Details -->
+      <div class="p-4 sm:p-6 md:p-7 flex flex-col justify-between">
+        <div>
+          <p class="f-d uppercase tracking-[0.16em] text-[11px] sm:text-[12px] text-[#A50F14] font-bold" id="featured-subtitle">
+            Фирменное блюдо шефа · 100% Halal
+          </p>
+          <h2 class="f-d font-bold uppercase text-[26px] sm:text-[34px] leading-[0.95] mt-1" id="featured-title">
+            Американский Бургер
+          </h2>
+          <p class="mt-2 text-[13px] sm:text-[14.5px] leading-relaxed text-[#232424]/90" id="featured-desc">
+            Сочная котлета из 100% отборной халяльной говядины на открытом гриле, обжаренная говяжья ветчина, двойной сыр чеддер, карамелизированный лук, спелые томаты, маринованные огурчики и фирменный соус на кунжутной булочке бриошь.
+          </p>
+
+          <!-- Compact Ingredients Pills -->
+          <div class="mt-3 flex flex-wrap gap-1.5">
+            <span class="px-2 py-0.5 rounded-full bg-[#DEDBD4] border border-[#232424]/25 text-[10.5px] font-medium">🥩 Говядина Halal</span>
+            <span class="px-2 py-0.5 rounded-full bg-[#DEDBD4] border border-[#232424]/25 text-[10.5px] font-medium">🧀 Двойной Чеддер</span>
+            <span class="px-2 py-0.5 rounded-full bg-[#DEDBD4] border border-[#232424]/25 text-[10.5px] font-medium">🥯 Булочка с кунжутом</span>
+            <span class="px-2 py-0.5 rounded-full bg-[#DEDBD4] border border-[#232424]/25 text-[10.5px] font-medium">⏱ 10 мин</span>
+          </div>
+        </div>
+
+        <div class="mt-4 pt-3 border-t border-dashed border-[#232424]/30 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <span class="text-[10.5px] uppercase tracking-wider opacity-70 block" data-i18n="featured_price_label">Цена порции (410г):</span>
+            <span class="f-d font-bold text-[26px] sm:text-[32px] text-[#EB2A2A] leading-none">52 000 <span class="text-[15px] text-[#232424]">сум</span></span>
+          </div>
+
+          <button
+            type="button"
+            onclick="window.addToCart('american_burger', event)"
+            class="btn-animated btn-shimmer bg-[#EB2A2A] hover:bg-[#232424] text-white px-4 py-2 rounded-lg font-bold f-d uppercase text-[14px] sm:text-[15px] tracking-wider flex items-center gap-1.5 shadow cursor-pointer whitespace-nowrap">
+            <i class="ti ti-shopping-bag-plus text-[16px]"></i>
+            <span data-i18n="featured_order_btn">В корзину</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- INTERACTIVE MENU SECTION -->
+  <section class="px-4 sm:px-8 md:px-12 py-8 sm:py-12 border-t-2 border-[#232424] reveal" id="v2-menu">
+    <div class="flex flex-wrap items-center justify-between gap-2.5 mb-3">
+      <div>
+        <span class="f-d uppercase tracking-[0.16em] text-[11.5px] sm:text-[13px] text-[#A50F14] font-bold block">
+          10 категорий · 73 позиции со студийными фото
+        </span>
+        <h2 class="f-d font-bold uppercase text-[32px] sm:text-[46px] leading-[0.92]" data-i18n="menu_title">
+          Наше Меню
+        </h2>
+      </div>
+
+      <!-- Compact Cart Total Trigger on Menu (Never Clips) -->
+      <button type="button" class="open-cart-trigger btn-animated bg-[#232424] text-[#DEDBD4] hover:bg-[#EB2A2A] hover:text-white px-3 py-1.5 rounded-lg font-bold f-d uppercase text-[14px] sm:text-[15px] tracking-wider flex items-center gap-1.5 shadow-sm cursor-pointer whitespace-nowrap flex-shrink-0">
+        <i class="ti ti-shopping-cart text-[16px]"></i>
+        <span class="cart-sum-display">0 сум</span>
+      </button>
+    </div>
+
+    <p class="mb-3.5 text-[12.5px] sm:text-[14.5px] opacity-85 max-w-2xl" data-i18n="menu_subtitle">
+      Все 73 авторских блюда: фирменные салаты, бургеры, пицца, лаваш, турецкие пиде, хот-доги, хрустящие стрипсы, картофель фри, десерты и роллы с доставкой до 03:00 ночи.
+    </p>
+
+    <!-- Compact Search Bar -->
+    <div class="mb-3.5">
+      <div class="relative max-w-xl">
+        <i class="ti ti-search absolute left-3 top-1/2 -translate-y-1/2 text-[16px] text-[#232424]/60"></i>
+        <input
+          type="text"
+          id="menu-search-input"
+          placeholder="Поиск блюда (например: Istanbul, Big Burger, Chicago, Lavash)..."
+          data-i18n-placeholder="search_placeholder"
+          class="w-full pl-9 pr-8 py-2 rounded-lg border-2 border-[#232424] bg-[#E8E5DE] text-[13px] sm:text-[14px] focus:outline-none focus:border-[#EB2A2A] shadow-sm"
+        />
+        <button
+          type="button"
+          id="menu-search-clear"
+          class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-[#232424]/15 hover:bg-[#EB2A2A] hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+          title="Очистить">
+          <i class="ti ti-x text-[13px]"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Compact Category Filter Tabs (Scrollable on Mobile) -->
+    <div class="overflow-x-auto pb-2 no-scrollbar mb-3">
+      <div id="category-tabs" class="flex items-center gap-1.5 min-w-max">
+        <!-- Rendered dynamically via JS -->
+      </div>
+    </div>
+
+    <!-- Compact Active Catalog Banner -->
+    <div id="active-catalog-header" class="mb-4 px-3 py-2 rounded-lg bg-[#232424] text-[#DEDBD4] flex flex-wrap items-center justify-between gap-2 shadow-sm">
+      <div class="flex items-center gap-2">
+        <i id="active-catalog-icon" class="ti ti-apps text-[#EB2A2A] text-[17px]"></i>
+        <span id="active-catalog-title" class="f-d uppercase font-bold text-[17px] sm:text-[19px] tracking-wider">Все меню (73)</span>
+      </div>
+      <span id="active-catalog-prep" class="text-[11px] sm:text-[12px] opacity-80">Приготовление: 10–15 мин · 100% Halal</span>
+    </div>
+
+    <!-- Menu Cards Grid -->
+    <div id="menu-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 sm:gap-7">
+      <!-- 73 items rendered dynamically via JS -->
+    </div>
+  </section>
+
+  <!-- TICKET / BOARDING PASS COMPONENT -->
+  <section class="px-4 sm:px-8 md:px-14 py-12 sm:py-16 border-t-[3px] border-[#232424] reveal" id="v2-about">
+    <div class="max-w-[1100px] mx-auto">
+      <div class="bg-[#232424] text-[#DEDBD4] px-4 sm:px-8 md:px-10 py-5 sm:py-6 flex flex-col sm:flex-row items-center justify-between shadow-2xl gap-4 sm:gap-0 border border-[#232424]">
+        <div class="text-center sm:text-left">
+          <p class="f-d uppercase tracking-[0.2em] text-[14px] sm:text-[16px] opacity-70" data-i18n="ticket_depart_label">
+            Отправление
+          </p>
+          <p class="f-d font-bold text-[34px] sm:text-[44px] md:text-[48px] leading-none" data-i18n="ticket_depart_val">
+            ЦЕНТР ТЕРМЕЗА
+          </p>
+        </div>
+
+        <div class="flex-1 mx-2 sm:mx-10 flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
+          <span class="flex-1 border-t-2 border-dashed border-[#DEDBD4]/50"></span>
+          <div class="steam-smoke-box">
+            <div class="steam-smoke-wrap">
+              <div class="steam-wisp"></div>
+              <div class="steam-wisp"></div>
+              <div class="steam-wisp"></div>
+            </div>
+            <img src="images/logo.png" width="36" height="36" alt="Logo" class="w-9 h-9 rounded-full border border-[#EB2A2A]">
+          </div>
+          <span class="flex-1 border-t-2 border-dashed border-[#DEDBD4]/50"></span>
+        </div>
+
+        <div class="text-center sm:text-right">
+          <p class="f-d uppercase tracking-[0.2em] text-[14px] sm:text-[16px] opacity-70" data-i18n="ticket_arrive_label">
+            Прибытие
+          </p>
+          <p class="f-d font-bold text-[34px] sm:text-[44px] md:text-[48px] leading-none text-[#EB2A2A]" data-i18n="ticket_arrive_val">
+            AMERICAN CAFFETTERIA
+          </p>
+        </div>
+      </div>
+
+      <div class="stub border-x border-b border-[#232424]/40 shadow-xl">
+        <div class="perf mx-4 sm:mx-8"></div>
+
+        <div class="grid grid-cols-2 md:grid-cols-4 px-4 sm:px-8 md:px-10 py-6 sm:py-8 gap-4 sm:gap-6 md:gap-8">
+          <div>
+            <p class="f-d uppercase tracking-[0.2em] text-[13px] sm:text-[15px] text-[#A50F14]" data-i18n="ticket_addr_label">
+              Адрес и ориентир
+            </p>
+            <p class="text-[14px] sm:text-[16px] font-medium mt-1 leading-snug" data-i18n="ticket_addr_val">
+              г. Термез, Центр (пр. Ат-Термизий)
+            </p>
+          </div>
+
+          <div>
+            <p class="f-d uppercase tracking-[0.2em] text-[13px] sm:text-[15px] text-[#A50F14]" data-i18n="ticket_phone_label">
+              Телефоны доставки
+            </p>
+            <p class="text-[14px] sm:text-[16px] font-bold mt-1 leading-snug">
+              <a href="tel:+998908220101" class="hover:text-[#EB2A2A] block">+998 90 822 01 01</a>
+              <a href="tel:+998918220101" class="hover:text-[#EB2A2A] block opacity-85">+998 91 822 01 01</a>
+            </p>
+          </div>
+
+          <div>
+            <p class="f-d uppercase tracking-[0.2em] text-[13px] sm:text-[15px] text-[#A50F14]" data-i18n="ticket_hours_label">
+              Часы работы
+            </p>
+            <p class="text-[14px] sm:text-[16px] font-medium mt-1 leading-snug" data-i18n="ticket_hours_val">
+              Ежедневно 08:00–03:00
+            </p>
+          </div>
+
+          <div>
+            <p class="f-d uppercase tracking-[0.2em] text-[13px] sm:text-[15px] text-[#A50F14]">
+              Telegram Mini App & Бот
+            </p>
+            <p class="text-[14px] sm:text-[15px] font-medium mt-1 leading-snug">
+              Авто-регистрация + GPS доставка в группу
+            </p>
+          </div>
+        </div>
+
+        <div class="px-4 sm:px-8 pb-5 flex items-center justify-between border-t border-[#232424]/15 pt-4">
+          <div class="barcode-laser-wrap" title="American Caffetteria Termez · Сканирование">
+            <div class="barcode w-48 sm:w-64 h-8"></div>
+            <div class="barcode-laser-beam"></div>
+          </div>
+          <span class="text-[11px] uppercase tracking-widest opacity-60">HALAL-CERT · AUTH: 53687724507</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PHOTOREPORTAGE / ATMOSPHERE GALLERY -->
+  <section class="px-4 sm:px-8 md:px-14 pt-12 sm:pt-16 pb-16 sm:pb-24 border-t-[3px] border-[#232424] reveal" id="v2-gallery">
+    <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-2 sm:gap-4 mb-8">
+      <h2 class="f-d font-bold uppercase text-[48px] sm:text-[64px] md:text-[76px] leading-[0.85]" data-i18n="gallery_title">
+        Фоторепортаж
+      </h2>
+      <p class="text-[13px] sm:text-[15px] italic text-left sm:text-right opacity-80" data-i18n="gallery_subtitle">
+        Кухня, открытый гриль, зал и атмосфера American Caffetteria в Термезе
+      </p>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mt-6">
+      <div class="sheet rounded-lg overflow-hidden border-2 border-[#232424] shadow-lg group">
+        <img src="images/gallery/cafe_interior.jpg" alt="Зал" class="w-full h-52 object-cover transition-transform duration-500 group-hover:scale-105">
+        <p class="p-3.5 text-[14px] font-medium" data-i18n="gallery_c1">Уютный зал для встреч с друзьями и семьей</p>
+      </div>
+      <div class="sheet rounded-lg overflow-hidden border-2 border-[#232424] shadow-lg group">
+        <img src="images/gallery/burger_grill.jpg" alt="Гриль" class="w-full h-52 object-cover transition-transform duration-500 group-hover:scale-105">
+        <p class="p-3.5 text-[14px] font-medium" data-i18n="gallery_c2">Котлеты из 100% говядины на открытом огне</p>
+      </div>
+      <div class="sheet rounded-lg overflow-hidden border-2 border-[#232424] shadow-lg group">
+        <img src="images/gallery/barista_coffee.jpg" alt="Бариста" class="w-full h-52 object-cover transition-transform duration-500 group-hover:scale-105">
+        <p class="p-3.5 text-[14px] font-medium" data-i18n="gallery_c3">Свежий помол 100% Арабики и мастерство бариста</p>
+      </div>
+      <div class="sheet rounded-lg overflow-hidden border-2 border-[#232424] shadow-lg group">
+        <img src="images/gallery/delivery_pack.jpg" alt="Доставка" class="w-full h-52 object-cover transition-transform duration-500 group-hover:scale-105">
+        <p class="p-3.5 text-[14px] font-medium" data-i18n="gallery_c4">Быстрая доставка горячих блюд по Термезу</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONTACTS & LOCATION SECTION -->
+  <section class="grid grid-cols-1 lg:grid-cols-2 min-h-0 border-t-[3px] border-[#232424] reveal" id="v2-contacts">
+    <div class="relative h-[300px] sm:h-[400px] lg:h-auto min-h-[300px] border-b-[3px] lg:border-b-0 lg:border-r-[3px] border-[#232424]">
+      <iframe
+        class="absolute inset-0 w-full h-full grayscale-[0.25] sepia-[0.08]"
+        loading="lazy"
+        src="https://www.google.com/maps?q=37.2242,67.2783&z=16&output=embed"
+        style="border:0"
+        title="Карта American Caffetteria Termez">
+      </iframe>
+    </div>
+
+    <div class="px-4 sm:px-8 md:px-14 py-8 sm:py-12">
+      <h2 class="f-d font-bold uppercase text-[46px] sm:text-[62px] leading-[0.85]" data-i18n="contacts_title">
+        Как добраться
+      </h2>
+      <p class="mt-3 text-[15px] sm:text-[17px]" data-i18n="contacts_desc">
+        Ждём вас в центре города Термез. Также оперативно доставляем горячие заказы прямо к вашей двери до 03:00 ночи.
+      </p>
+
+      <div class="stub mt-6 px-4 sm:px-8 py-4 sm:py-6 shadow-md border border-[#232424]/30">
+        <div class="flex justify-between py-2.5 row-rule gap-4">
+          <span class="f-d uppercase tracking-[0.15em] text-[15px] sm:text-[17px] opacity-75" data-i18n="contacts_label_addr">Адрес</span>
+          <span class="font-medium text-right text-[14px] sm:text-[16px]" data-i18n="contacts_addr">
+            г. Термез, Центр, ориентир пр. Ат-Термизий
+          </span>
+        </div>
+
+        <div class="flex justify-between py-2.5 row-rule gap-4">
+          <span class="f-d uppercase tracking-[0.15em] text-[15px] sm:text-[17px] opacity-75" data-i18n="contacts_label_phone1">Телефон 1</span>
+          <a href="tel:+998908220101" class="font-bold text-[#EB2A2A] hover:underline text-[15px] sm:text-[17px]">
+            +998 90 822 01 01
+          </a>
+        </div>
+
+        <div class="flex justify-between py-2.5 row-rule gap-4">
+          <span class="f-d uppercase tracking-[0.15em] text-[15px] sm:text-[17px] opacity-75" data-i18n="contacts_label_phone2">Телефон 2</span>
+          <a href="tel:+998918220101" class="font-bold text-[#EB2A2A] hover:underline text-[15px] sm:text-[17px]">
+            +998 91 822 01 01
+          </a>
+        </div>
+
+        <div class="flex justify-between py-2.5 row-rule gap-4">
+          <span class="f-d uppercase tracking-[0.15em] text-[15px] sm:text-[17px] opacity-75" data-i18n="contacts_label_ig">Instagram</span>
+          <a href="https://www.instagram.com/american_caffetteria" target="_blank" rel="noopener noreferrer" class="font-bold text-[#EB2A2A] hover:underline text-[15px] sm:text-[17px]">
+            @american_caffetteria
+          </a>
+        </div>
+
+        <div class="flex justify-between py-2.5 gap-4">
+          <span class="f-d uppercase tracking-[0.15em] text-[15px] sm:text-[17px] opacity-75" data-i18n="contacts_label_hours">Режим работы</span>
+          <span class="font-medium text-[14px] sm:text-[16px]" data-i18n="contacts_hours_val">Ежедневно 08:00 – 03:00</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="px-4 sm:px-8 md:px-14 py-8 border-t-[3px] border-[#232424] bg-[#232424] text-[#DEDBD4]">
+    <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <img src="images/logo.png" width="36" height="36" alt="Logo" class="w-9 h-9 rounded-full border border-[#EB2A2A]">
+        <span class="f-d uppercase tracking-widest text-[20px] font-bold">American Caffetteria · Termez</span>
+      </div>
+
+      <p class="text-[13px] opacity-75 text-center sm:text-right" data-i18n="footer_text">
+        © 2026 American Caffetteria. Все права защищены. Термез, Узбекистан · 100% Halal.
+      </p>
+    </div>
+  </footer>
+
+  
+
+  <!-- FLOATING CALL ACTION BUTTON -->
+  <a href="tel:+998908220101" id="floating-call-btn" class="fab-call" title="Позвонить в American Caffetteria">
+    <div class="fab-call-ping"></div>
+    <i class="ti ti-phone-call"></i>
+  </a>
+
+  <!-- MOBILE APP & TELEGRAM MINI APP BOTTOM NAVIGATION BAR -->
+  <nav class="mobile-bottom-nav" id="mobile-bottom-nav" aria-label="Мобильная навигация">
+    <button type="button" class="mob-nav-btn active" data-target="menu" onclick="window.mobNavGo('menu', this)">
+      <i class="ti ti-burger"></i>
+      <span>Меню</span>
+    </button>
+    <button type="button" class="mob-nav-btn" data-target="pizza" onclick="window.mobNavGo('pizza', this)">
+      <i class="ti ti-pizza"></i>
+      <span>Пицца</span>
+    </button>
+    <button type="button" class="mob-nav-btn" data-target="tea" onclick="window.mobNavGo('tea', this)">
+      <i class="ti ti-cup"></i>
+      <span>Напитки</span>
+    </button>
+    <button type="button" class="mob-nav-btn open-cart-trigger">
+      <i class="ti ti-shopping-bag"></i>
+      <span>Корзина</span>
+      <span class="cart-badge absolute top-0.5 right-2 bg-[#EB2A2A] text-white text-[10px] font-bold px-1.5 rounded-full hidden">0</span>
+    </button>
+    <button type="button" class="mob-nav-btn open-reg-trigger">
+      <i class="ti ti-user-check"></i>
+      <span id="mob-nav-profile-label">Профиль</span>
+    </button>
+  </nav>
+
+  <!-- =====================================================================
+       TELEGRAM & PHONE REGISTRATION MODAL (ИМЯ, ФАМИЛИЯ, ТЕЛЕФОН, ЮЗ, ГЕОЛОКАЦИЯ)
+       ===================================================================== -->
+  <div id="reg-modal-overlay" class="modal-overlay">
+    <div class="modal-content shadow-2xl rounded-xl p-5 sm:p-7">
+      <button type="button" id="reg-modal-close" class="absolute top-4 right-4 z-20 w-9 h-9 rounded-full bg-[#232424]/80 text-white flex items-center justify-center hover:bg-[#EB2A2A] transition-colors cursor-pointer" title="Закрыть">
+        <i class="ti ti-x text-[20px]"></i>
+      </button>
+
+      <div class="flex items-center gap-3 mb-3">
+        <img src="images/logo.png" width="42" height="42" alt="Logo" class="w-10 h-10 rounded-full border-2 border-[#232424] shadow">
+        <div>
+          <span class="px-2 py-0.5 rounded bg-[#229ED9] text-white text-[11px] font-bold uppercase tracking-wider">Telegram Mini Web & Bot Sync</span>
+          <h3 class="f-d font-bold uppercase text-[28px] sm:text-[34px] leading-none mt-1">
+            Регистрация клиента
+          </h3>
+        </div>
+      </div>
+
+      <p class="text-[13px] sm:text-[14px] opacity-85 mb-4">
+        Заполните анкету один раз: бот сохранит ваше <strong>Имя, Фамилию, Номер телефона, @username и Геолокацию</strong>, пришлет код подтверждения и передаст анкету в рабочую Telegram-группу кафе для мгновенной доставки!
+      </p>
+
+      <div id="reg-error-box" class="hidden mb-3 p-2.5 rounded bg-[#EB2A2A]/15 border border-[#EB2A2A] text-[#A50F14] text-[13px] font-medium"></div>
+      <div id="reg-success-box" class="hidden mb-3 p-3 rounded bg-[#166534]/15 border border-[#166534] text-[#166534] text-[13px] font-medium"></div>
+
+      <div class="space-y-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <div>
+            <label class="f-d uppercase tracking-wider text-[14px] font-bold block mb-1">Имя *</label>
+            <input type="text" id="reg-first-name" placeholder="Например: Алишер" class="w-full px-3 py-2 text-[14px] rounded-lg border-2 border-[#232424]/40 bg-white focus:outline-none focus:border-[#229ED9]" />
+          </div>
+          <div>
+            <label class="f-d uppercase tracking-wider text-[14px] font-bold block mb-1">Фамилия *</label>
+            <input type="text" id="reg-last-name" placeholder="Например: Рахимов" class="w-full px-3 py-2 text-[14px] rounded-lg border-2 border-[#232424]/40 bg-white focus:outline-none focus:border-[#229ED9]" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <div>
+            <label class="f-d uppercase tracking-wider text-[14px] font-bold block mb-1">Номер телефона *</label>
+            <input type="tel" id="reg-phone" value="+998 " placeholder="+998 90 123 45 67" class="w-full px-3 py-2 text-[14px] font-bold rounded-lg border-2 border-[#232424]/40 bg-white focus:outline-none focus:border-[#229ED9]" />
+          </div>
+          <div>
+            <label class="f-d uppercase tracking-wider text-[14px] font-bold block mb-1">Юзернейм Telegram (@юз)</label>
+            <input type="text" id="reg-username" placeholder="@alisher_termez" class="w-full px-3 py-2 text-[14px] rounded-lg border-2 border-[#232424]/40 bg-white focus:outline-none focus:border-[#229ED9]" />
+          </div>
+        </div>
+
+        <!-- Geolocation Section -->
+        <div>
+          <label class="f-d uppercase tracking-wider text-[14px] font-bold block mb-1">Геолокация и Адрес в Термезе *</label>
+          <div class="flex flex-col sm:flex-row gap-2">
+            <input type="text" id="reg-location" placeholder="Нажмите «Определить GPS» или введите улицу/ориентир" class="flex-1 px-3 py-2 text-[14px] rounded-lg border-2 border-[#232424]/40 bg-white focus:outline-none focus:border-[#229ED9]" />
+            <button type="button" id="reg-detect-gps-btn" class="px-3.5 py-2 rounded-lg bg-[#232424] hover:bg-[#EB2A2A] text-white font-bold f-d uppercase tracking-wider text-[15px] flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap shadow">
+              <i class="ti ti-current-location text-[18px]"></i>
+              <span>Определить GPS</span>
+            </button>
+          </div>
+          <p id="reg-gps-coords" class="text-[11px] opacity-70 mt-1">GPS: не определено (доступно в браузере и Telegram Mini App)</p>
+        </div>
+
+        <!-- Submit & Save Registration -->
+        <div class="pt-2 flex flex-col sm:flex-row gap-2.5">
+          <button type="button" id="reg-submit-btn" class="flex-1 btn-animated btn-shimmer bg-[#229ED9] hover:bg-[#1a85b8] text-white py-3 rounded-lg font-bold f-d uppercase text-[19px] tracking-wider flex items-center justify-center gap-2 shadow-lg cursor-pointer">
+            <i class="ti ti-check text-[20px]"></i>
+            <span>Ro'yxatdan o'tish</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLIDE-OVER SHOPPING CART DRAWER -->
+  <div id="cart-overlay" class="cart-overlay"></div>
+  <aside id="cart-drawer" class="cart-drawer">
+    <div class="p-5 sm:p-6 border-b-2 border-[#232424] flex items-center justify-between bg-[#232424] text-[#DEDBD4]">
+      <div class="flex items-center gap-2">
+        <i class="ti ti-shopping-bag text-[#EB2A2A] text-[24px]"></i>
+        <h3 class="f-d font-bold uppercase text-[26px] tracking-wide" data-i18n="cart_title">
+          Ваша Корзина
+        </h3>
+      </div>
+      <div class="flex items-center gap-3">
+        <button type="button" id="clear-cart-btn" class="hidden text-[12px] uppercase tracking-wider px-2.5 py-1 rounded border border-[#DEDBD4]/30 hover:border-[#EB2A2A] hover:text-[#EB2A2A] transition-colors cursor-pointer" data-i18n="cart_clear_btn">
+          Очистить
+        </button>
+        <button type="button" id="close-cart-btn" class="text-[#DEDBD4] hover:text-[#EB2A2A] text-[24px] cursor-pointer transition-colors" title="Закрыть">
+          <i class="ti ti-x"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Empty State -->
+    <div id="cart-empty-view" class="flex-1 flex flex-col items-center justify-center p-8 text-center">
+      <div class="w-20 h-20 rounded-full bg-[#232424]/10 flex items-center justify-center text-[36px] text-[#232424]/40 mb-4">
+        <i class="ti ti-shopping-cart-off"></i>
+      </div>
+      <h4 class="f-d font-bold uppercase text-[28px]" data-i18n="cart_empty_title">
+        Корзина пуста
+      </h4>
+      <p class="f-b text-[15px] opacity-75 max-w-xs mt-2" data-i18n="cart_empty_sub">
+        Выберите аппетитные бургеры, лаваш, чай или комбо из нашего меню!
+      </p>
+      <button type="button" id="cart-empty-browse-btn" class="mt-6 btn-animated bg-[#232424] text-[#DEDBD4] hover:bg-[#EB2A2A] px-6 py-2.5 rounded font-bold f-d uppercase text-[17px] tracking-wider cursor-pointer" data-i18n="cart_empty_btn">
+        Перейти к меню
+      </button>
+    </div>
+
+    <!-- Active Cart Items & Checkout Form -->
+    <div id="cart-checkout-view" class="flex-1 flex flex-col justify-between overflow-hidden hidden">
+      <div class="px-4 sm:px-6 pt-3 pb-2 bg-[#DEDBD4]/60 border-b border-[#232424]/15">
+        <p id="cart-free-delivery-text" class="text-[12px] font-bold text-[#232424] mb-1.5">
+          Добавьте ещё на 100 000 сум для бесплатной доставки!
+        </p>
+        <div class="w-full h-2 bg-[#232424]/15 rounded-full overflow-hidden">
+          <div id="cart-free-delivery-bar" class="h-full bg-[#EB2A2A] transition-all duration-300" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <div id="cart-items-list" class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3">
+        <!-- Rendered via JS -->
+      </div>
+
+      <div class="border-t-2 border-[#232424] p-4 sm:p-5 bg-[#E8E5DE] shadow-inner space-y-2.5">
+        <div id="cart-form-error" class="hidden p-2.5 rounded bg-[#EB2A2A]/15 border border-[#EB2A2A] text-[#A50F14] text-[13px] font-medium"></div>
+
+        <div>
+          <label class="f-d uppercase tracking-wider text-[14px] font-bold block mb-1" data-i18n="cart_delivery_type">
+            Способ получения
+          </label>
+          <div class="grid grid-cols-2 gap-1.5">
+            <label class="flex items-center gap-1.5 p-2 rounded border border-[#232424]/30 bg-white/50 cursor-pointer hover:border-[#EB2A2A]">
+              <input type="radio" name="delivery_choice" id="opt-delivery" checked class="accent-[#EB2A2A]">
+              <span class="text-[12px] font-medium" data-i18n="cart_delivery_option">Доставка</span>
+            </label>
+            <label class="flex items-center gap-1.5 p-2 rounded border border-[#232424]/30 bg-white/50 cursor-pointer hover:border-[#EB2A2A]">
+              <input type="radio" name="delivery_choice" id="opt-pickup" class="accent-[#EB2A2A]">
+              <span class="text-[12px] font-medium" data-i18n="cart_pickup_option">Самовывоз</span>
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <label class="f-d uppercase tracking-wider text-[14px] font-bold block mb-1" data-i18n="cart_pay_method">
+            Способ оплаты
+          </label>
+          <div class="grid grid-cols-3 gap-1.5">
+            <label class="flex items-center gap-1.5 p-2 rounded border border-[#232424]/30 bg-white/50 cursor-pointer hover:border-[#EB2A2A]">
+              <input type="radio" name="payment_choice" value="cash" id="pay-cash" checked class="accent-[#EB2A2A]">
+              <span class="text-[12px] font-medium" data-i18n="pay_cash">Наличные</span>
+            </label>
+            <label class="flex items-center gap-1.5 p-2 rounded border border-[#232424]/30 bg-white/50 cursor-pointer hover:border-[#EB2A2A]">
+              <input type="radio" name="payment_choice" value="card" id="pay-card" class="accent-[#EB2A2A]">
+              <span class="text-[12px] font-medium" data-i18n="pay_card">Терминал</span>
+            </label>
+            <label class="flex items-center gap-1.5 p-2 rounded border border-[#232424]/30 bg-white/50 cursor-pointer hover:border-[#EB2A2A]">
+              <input type="radio" name="payment_choice" value="online" id="pay-online" class="accent-[#EB2A2A]">
+              <span class="text-[12px] font-medium" data-i18n="pay_online">Click/Payme</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="space-y-2">
+          <input
+            type="text"
+            id="order-name"
+            placeholder="Ваше Имя и Фамилия"
+            data-i18n-placeholder="cart_name_placeholder"
+            class="w-full px-3 py-2 text-[14px] rounded border border-[#232424]/40 bg-white/80 focus:outline-none focus:border-[#EB2A2A]"
+          />
+          <input
+            type="tel"
+            id="order-phone"
+            placeholder="Телефон (+998 90 123 45 67)"
+            data-i18n-placeholder="cart_phone_placeholder"
+            value="+998 "
+            class="w-full px-3 py-2 text-[14px] rounded border border-[#232424]/40 bg-white/80 focus:outline-none focus:border-[#EB2A2A] font-bold"
+          />
+          <div id="cart-address-wrap" class="flex gap-1.5">
+            <input
+              type="text"
+              id="order-address"
+              placeholder="Адрес доставки или GPS-локация в Термезе"
+              data-i18n-placeholder="cart_addr_placeholder"
+              class="flex-1 px-3 py-2 text-[14px] rounded border border-[#232424]/40 bg-white/80 focus:outline-none focus:border-[#EB2A2A]"
+            />
+            <button type="button" id="cart-gps-btn" class="px-2.5 py-2 rounded bg-[#232424] hover:bg-[#EB2A2A] text-white cursor-pointer" title="Определить мою GPS геолокацию">
+              <i class="ti ti-current-location"></i>
+            </button>
+          </div>
+          <input
+            type="text"
+            id="order-comment"
+            placeholder="Комментарий к заказу (соусы, без лука, приборы)"
+            data-i18n-placeholder="cart_comment_placeholder"
+            class="w-full px-3 py-2 text-[14px] rounded border border-[#232424]/40 bg-white/80 focus:outline-none focus:border-[#EB2A2A]"
+          />
+        </div>
+
+        <div class="border-t border-[#232424]/20 pt-2 space-y-1 text-[14px]">
+          <div class="flex justify-between">
+            <span class="opacity-75" data-i18n="cart_subtotal">Сумма заказа:</span>
+            <span id="cart-subtotal-val" class="font-bold">0 сум</span>
+          </div>
+          <!-- Promo Code Box (AMERICAN10, HALAL5, SUPER2026) -->
+          <div class="pt-1 pb-1">
+            <div class="flex gap-1.5">
+              <input
+                type="text"
+                id="cart-promo-input"
+                placeholder="Promo-kod (AMERICAN10, HALAL5, SUPER2026)"
+                class="flex-1 px-2.5 py-1.5 rounded border border-[#232424]/30 bg-white text-[13px] font-bold uppercase"
+              />
+              <button
+                type="button"
+                id="cart-promo-apply-btn"
+                class="px-3 py-1.5 rounded bg-[#232424] text-[#DEDBD4] hover:bg-[#EB2A2A] hover:text-white font-bold f-d uppercase text-[13px] tracking-wider cursor-pointer">
+                Qo'llash
+              </button>
+            </div>
+            <div id="cart-promo-msg" class="text-[11.5px] font-bold mt-1 hidden"></div>
+          </div>
+
+          <div id="cart-discount-row" class="flex justify-between text-[#166534] font-bold hidden">
+            <span>🎁 Chegirma (<span id="cart-promo-code-lbl">AMERICAN10</span>):</span>
+            <span id="cart-discount-val">-0 сум</span>
+          </div>
+
+          <div class="flex justify-between">
+            <span class="opacity-75" data-i18n="cart_delivery_fee">Доставка (бесплатно от 100 000):</span>
+            <span id="cart-delivery-fee-val" class="font-bold text-[#EB2A2A]">Бесплатно</span>
+          </div>
+          <div class="flex justify-between text-[18px] sm:text-[20px] f-d font-bold pt-1 border-t border-[#232424]/30">
+            <span data-i18n="cart_total">ИТОГО К ОПЛАТЕ:</span>
+            <span id="cart-grand-total-val" class="text-[#EB2A2A]">0 сум</span>
+          </div>
+        </div>
+
+        <div class="space-y-2 pt-1">
+          <button
+            type="button"
+            id="cart-pos-direct-btn"
+            class="w-full btn-animated btn-shimmer bg-[#EB2A2A] hover:bg-[#c81e1e] text-white py-2.5 rounded-lg font-bold f-d uppercase text-[17px] tracking-wider flex items-center justify-center gap-2 shadow-lg cursor-pointer">
+            <i class="ti ti-shopping-cart-check text-[20px]"></i>
+            <span data-i18n="cart_btn_order">Оформить заказ</span>
+          </button>
+
+          <button
+            type="button"
+            id="cart-call-order-btn"
+            class="w-full btn-animated bg-[#232424] hover:bg-[#EB2A2A] text-white py-2 rounded-lg font-bold f-d uppercase text-[15px] tracking-wider flex items-center justify-center gap-2 shadow cursor-pointer">
+            <i class="ti ti-phone-call text-[17px]"></i>
+            <span data-i18n="cart_btn_call">Позвонить и заказать</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- QUICK DISH MODAL -->
+  <div id="dish-modal-overlay" class="modal-overlay">
+    <div class="modal-content shadow-2xl rounded-lg">
+      <button type="button" id="modal-close-btn" class="absolute top-4 right-4 z-20 w-9 h-9 rounded-full bg-[#232424]/80 text-white flex items-center justify-center hover:bg-[#EB2A2A] transition-colors cursor-pointer" title="Закрыть">
+        <i class="ti ti-x text-[20px]"></i>
+      </button>
+      <div id="modal-dish-body"></div>
+    </div>
+  </div>
+
+  <!-- ORDER RECEIPT & TELEGRAM DISPATCH MODAL -->
+  <div id="receipt-modal-overlay" class="modal-overlay">
+    <div class="modal-content shadow-2xl rounded-lg p-6 sm:p-8">
+      <button type="button" id="receipt-modal-close" class="absolute top-4 right-4 z-20 w-9 h-9 rounded-full bg-[#232424]/80 text-white flex items-center justify-center hover:bg-[#EB2A2A] transition-colors cursor-pointer" title="Закрыть">
+        <i class="ti ti-x text-[20px]"></i>
+      </button>
+
+      <div class="flex items-center gap-3 mb-3">
+        <div class="w-11 h-11 rounded-full bg-[#22c55e] text-white flex items-center justify-center text-[24px] shadow">
+          <i class="ti ti-check"></i>
+        </div>
+        <h3 class="f-d font-bold uppercase text-[30px] sm:text-[36px] leading-none" data-i18n="receipt_modal_title">
+          Чек заказа готов!
+        </h3>
+      </div>
+
+      <p class="text-[14px] sm:text-[15px] opacity-85 mb-4" data-i18n="receipt_modal_sub">
+        Ваш заказ сформирован и уже передан в рабочую Telegram-группу кафе:
+      </p>
+
+      <pre id="receipt-preview-text" class="p-4 rounded bg-white/80 border-2 border-dashed border-[#232424]/40 text-[12px] sm:text-[13px] font-mono whitespace-pre-wrap max-h-60 overflow-y-auto mb-5"></pre>
+
+      <div class="space-y-2.5">
+        <button
+          type="button"
+          id="receipt-copy-btn"
+          class="w-full btn-animated bg-[#E8E5DE] hover:bg-white text-[#232424] border-2 border-[#232424] py-2.5 rounded-lg font-bold f-d uppercase text-[16px] tracking-wider flex items-center justify-center gap-2 cursor-pointer">
+          <i class="ti ti-copy text-[18px] text-[#EB2A2A]"></i>
+          <span data-i18n="receipt_btn_copy">Скопировать текст чека</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ORDER HISTORY & LIVE STATUS TRACKER MODAL -->
+  <div id="orders-history-modal-overlay" class="dish-modal-overlay">
+    <div class="dish-modal-sheet max-w-[560px]">
+      <div class="p-4 sm:p-5 border-b border-[#232424]/20 flex justify-between items-center bg-[#E8E5DE]">
+        <h3 class="f-d font-bold uppercase text-[22px] tracking-wide text-[#232424] flex items-center gap-2">
+          <i class="ti ti-package text-[#EB2A2A] text-[24px]"></i>
+          <span data-i18n="nav_my_orders">Мои заказы</span>
+        </h3>
+        <button type="button" id="orders-history-modal-close" class="text-[#232424] hover:text-[#EB2A2A] text-[24px] cursor-pointer" aria-label="Закрыть">
+          <i class="ti ti-x"></i>
+        </button>
+      </div>
+      <div class="p-4 sm:p-5 bg-[#FAF9F6] max-h-[70vh] overflow-y-auto space-y-3.5" id="orders-history-list">
+        <!-- Rendered dynamically by app.js -->
+      </div>
+    </div>
+  </div>
+
+  <!-- WELCOME SPLASH SCREEN (3:4 ROYAL BLUE AMERICAN LOGO) -->
+  <div id="welcome-splash-modal" class="welcome-splash-overlay hidden">
+    <div class="welcome-splash-card">
+      <img src="images/logo_3x4.png" alt="American Caffetteria 3:4 Logo" class="splash-logo-3x4" />
+      <div class="inline-block px-3 py-0.5 rounded-full bg-[#EB2A2A] text-white text-[11px] font-bold uppercase tracking-widest mb-1">
+        Termiz sh. · 100% Halol
+      </div>
+      <h2 class="f-d font-bold uppercase text-[28px] leading-tight text-white">AMERICAN CAFFETTERIA</h2>
+      <p class="text-[13px] opacity-80 mt-1 mb-4">
+        Mazali burgerlar, pitsa, lavash, sushi va mualliflik shirinliklari — tez yetkazib berish bilan!
+      </p>
+      <div class="flex flex-col gap-2">
+        <button type="button" id="splash-btn-menu" class="w-full py-2.5 rounded-lg bg-[#EB2A2A] hover:bg-[#c81e1e] text-white font-bold f-d uppercase text-[17px] tracking-wider cursor-pointer">
+          🍔 Menyuni ko'rish
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Classic Scripts -->
+  <script src="menu_data.js?v=33"></script>
+  <script src="app.js?v=33"></script>
+</body>
+</html>

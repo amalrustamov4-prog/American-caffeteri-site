@@ -1,0 +1,27 @@
+{
+  "name": "american-caffetteria-app",
+  "version": "1.0.0",
+  "description": "American Caffetteria Mobile App (Termez, Uzbekistan)",
+  "main": "index.html",
+  "scripts": {
+    "start": "python -m http.server 3000",
+    "cap:sync": "cap sync",
+    "cap:android": "cap open android"
+  },
+  "keywords": [
+    "american-caffetteria",
+    "termez",
+    "fast-food",
+    "mobile-app"
+  ],
+  "author": "American Caffetteria",
+  "license": "MIT",
+  "dependencies": {
+    "@capacitor/core": "^6.2.0"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/cli": "^6.2.0"
+  }
+}
+

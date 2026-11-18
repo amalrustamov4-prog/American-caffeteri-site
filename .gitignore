@@ -1,0 +1,48 @@
+# Node dependencies
+node_modules/
+package-lock.json
+
+# Android Build & Gradle
+.gradle/
+build/
+android/app/build/
+android/.gradle/
+android/capacitor-cordova-android-plugins/build/
+android/capacitor-android/build/
+*.apk
+*.aab
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+
+# IDE & OS
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
+
+# Temporary archives & logs
+*.zip
+*.log
+
+# Secrets & Environment
+.env
+.env.*
+telegram_bot/.env
+telegram_bot/.env.*
+!.env.example
+*.keystore
+*.jks
+keystore.properties
+android/keystore.properties
+
+# SQLite Database
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3

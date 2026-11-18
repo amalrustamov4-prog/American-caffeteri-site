@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: american-caffetteria
+    restart: always
+    ports:
+      - "8080:8080"
+    env_file:
+      - telegram_bot/.env
+    volumes:
+      - ./telegram_bot/cafe_bot.db:/app/telegram_bot/cafe_bot.db
+
