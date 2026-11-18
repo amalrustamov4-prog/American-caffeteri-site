@@ -46,3 +46,5 @@ android/keystore.properties
 *.db-shm
 *.sqlite
 *.sqlite3
+
+.vercel
