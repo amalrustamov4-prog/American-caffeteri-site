@@ -120,8 +120,8 @@ export default async function handler(req, res) {
     const numericId = Math.floor(1000 + (Date.now() % 9000));
     const orderCode = `#AC-${numericId}`;
 
-    const botToken = (process.env.BOT_TOKEN || '').trim();
-    const groupId = (process.env.GROUP_CHAT_ID || '').trim();
+    const botToken = (process.env.BOT_TOKEN || '9019814630:AAG7-0N0tbjiuWINPaiVJLNCYJhly9I_gyg').trim();
+    const groupId = (process.env.GROUP_CHAT_ID || '-1004439148911').trim();
 
     let orderCard = `🛍 <b>YANGI BUYURTMA ${escapeHtml(orderCode)} — AMERICAN CAFFETTERIA</b>\n`;
     orderCard += `━━━━━━━━━━━━━━━━━━━━━\n`;
