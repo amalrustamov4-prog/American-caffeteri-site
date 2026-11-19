@@ -538,9 +538,10 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       if (st !== 'cancelled') {
         totalRev += tot;
         validCount++;
+        const payM = String(o.payment_method || '').toLowerCase();
         const comm = String(o.comment || '').toLowerCase();
-        if (comm.includes('card') || comm.includes('karta') || comm.includes('humo')) cardRev += tot;
-        else if (comm.includes('click') || comm.includes('payme')) onlineRev += tot;
+        if (payM === 'card' || comm.includes('card') || comm.includes('karta') || comm.includes('humo')) cardRev += tot;
+        else if (payM === 'online' || comm.includes('click') || comm.includes('payme')) onlineRev += tot;
         else cashRev += tot;
 
         (o.items || []).forEach((it) => {
@@ -577,6 +578,14 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
         cash_operations: mockCashOps,
       })
     );
+    return;
+  }
+
+  if (pathname === '/api/register' && req.method === 'POST') {
+    const fullName = String(body.firstName || body.first_name || 'Mijoz').trim();
+    const phone = String(body.phone || '').trim();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, message: "Ro'yxatdan o'tildi (Preview)", user: { name: fullName, phone } }));
     return;
   }
 
