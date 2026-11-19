@@ -47,8 +47,8 @@ export default async function handler(req, res) {
     }
 
     const fullName = `${firstName} ${lastName}`.trim();
-    const botToken = process.env.BOT_TOKEN || '';
-    const groupId = process.env.GROUP_CHAT_ID || '';
+    const botToken = (process.env.BOT_TOKEN || '').trim();
+    const groupId = (process.env.GROUP_CHAT_ID || '').trim();
 
     let card = `👤 <b>НОВАЯ РЕГИСТРАЦИЯ КЛИЕНТА</b>\n`;
     card += `━━━━━━━━━━━━━━━━━━━━━\n`;

@@ -2281,13 +2281,18 @@ try {
         ? "🚗 Доставка"
         : (savedOrder.delivery_type === "dine_in" ? "🏛️ В зале" : "🏃 Самовывоз");
 
+      const payLabel = savedOrder.payment_method === "card"
+        ? "💳 Карта / Терминал"
+        : (savedOrder.payment_method === "online" ? "📱 Click / Payme (Онлайн)" : "💵 Наличные");
+
       const receiptText = `🧾 ЧЕК ЗАКАЗА #${savedOrder.id}
 ---------------------------------
 ${itemsListText}
 ---------------------------------
 Сумма блюд: ${savedOrder.subtotal.toLocaleString("ru-RU")} ${cur}
 Способ: ${deliveryLabel}
-${deliveryText}ИТОГО К ОПЛАТЕ: ${savedOrder.total.toLocaleString("ru-RU")} ${cur}
+${deliveryText}Оплата: ${payLabel}
+ИТОГО К ОПЛАТЕ: ${savedOrder.total.toLocaleString("ru-RU")} ${cur}
 
 👤 Клиент: ${savedOrder.customer_name}
 📞 Телефон: ${savedOrder.phone}

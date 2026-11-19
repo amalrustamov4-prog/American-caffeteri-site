@@ -6,7 +6,11 @@
   "scripts": {
     "start": "python -m http.server 3000",
     "cap:sync": "cap sync",
-    "cap:android": "cap open android"
+    "cap:android": "cap open android",
+    "sync": "python sync_web.py",
+    "test": "python tests/test_suite.py && python tests/test_realtime_endpoints.py",
+    "zip": "python make_export_zips.py",
+    "deploy:vercel": "vercel --prod --token vcp_3QZesduPL4fL0JPUQk176tQUqioZt7p08DVjBwTByHDFD2sQld3O0Wsa --yes"
   },
   "keywords": [
     "american-caffetteria",
