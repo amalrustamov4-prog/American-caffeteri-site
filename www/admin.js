@@ -1377,7 +1377,7 @@
       delivery_type: state.posOrderType,
       address: custAddr || (state.posOrderType === "dine_in" ? custName : "Termiz sh."),
       comment: `To'lov: ${state.payMethod.toUpperCase()} (Kassa)`,
-      payment_method: state.payMethod || "cash",
+      payment_method: (state.payMethod === "click" || state.payMethod === "payme") ? "online" : (state.payMethod || "cash"),
       payment_status: "paid",
       source: "kassa",
       items: state.posCart.map((i) => ({
@@ -1759,7 +1759,15 @@
       discount: ord.discount || 0,
       delivFee: ord.delivery_fee || 0,
       total: tot,
-      payMethod: (ord.comment || "").toLowerCase().includes("karta") ? "card" : "cash",
+      payMethod: (function() {
+        const pm = String(ord.payment_method || "").toLowerCase();
+        if (pm === "card") return "card";
+        if (pm === "online" || pm === "click" || pm === "payme") return "click";
+        const comm = String(ord.comment || "").toLowerCase();
+        if (comm.includes("karta") || comm.includes("card") || comm.includes("terminal")) return "card";
+        if (comm.includes("click") || comm.includes("payme") || comm.includes("online")) return "click";
+        return "cash";
+      })(),
       cashGiven: tot,
       change: 0,
       date: ord.created_at_utc || new Date().toLocaleString("ru-RU"),

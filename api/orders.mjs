@@ -97,6 +97,17 @@ export default async function handler(req, res) {
     const comment = String(payload.comment || customer.comment || '').trim().slice(0, 300);
     const promoCode = String(payload.promo_code || '').trim().toUpperCase();
 
+    const rawPayMethod = String(payload.payment_method || customer.payment_method || 'cash').trim().toLowerCase();
+    let paymentMethod = 'cash';
+    let payMethodLabel = "💵 Naqd pul (Наличные)";
+    if (rawPayMethod === 'card') {
+      paymentMethod = 'card';
+      payMethodLabel = "💳 Karta / Terminal (Карта)";
+    } else if (rawPayMethod === 'online' || rawPayMethod === 'click' || rawPayMethod === 'payme') {
+      paymentMethod = 'online';
+      payMethodLabel = "📱 Click / Payme (Онлайн)";
+    }
+
     const PROMOS = { AMERICAN10: 0.10, HALAL5: 0.05, SUPER2026: 0.15, BLEST10: 0.10 };
     const subtotal = items.reduce((s, it) => s + it.price * it.qty, 0);
     const discount = PROMOS[promoCode] ? Math.round(subtotal * PROMOS[promoCode]) : 0;
@@ -127,6 +138,7 @@ export default async function handler(req, res) {
     if (discount > 0) {
       orderCard += `🎁 <b>Chegirma (${escapeHtml(promoCode)}):</b> -${discount.toLocaleString('ru-RU')} so'm\n`;
     }
+    orderCard += `💳 <b>To'lov turi:</b> ${escapeHtml(payMethodLabel)}\n`;
     orderCard += `💰 <b>JAMI TO'LOV:</b> <b>${totalAmount.toLocaleString('ru-RU')} so'm</b>\n`;
     orderCard += `🕒 <b>Vaqt:</b> ${new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent' })}`;
 
@@ -173,6 +185,7 @@ export default async function handler(req, res) {
       delivery_type: deliveryType,
       address,
       comment,
+      payment_method: paymentMethod,
       items,
       subtotal,
       discount,

@@ -453,6 +453,8 @@ def validate_and_build_order(payload: Dict[str, Any], default_source: str = "web
     total = discounted_subtotal + delivery_fee
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     raw_pay_m = str(payload.get("payment_method") or "cash").strip().lower()
+    if raw_pay_m in ("click", "payme"):
+        raw_pay_m = "online"
     payment_method = raw_pay_m if raw_pay_m in ("cash", "card", "online") else "cash"
     raw_pay_st = str(payload.get("payment_status") or "pending").strip().lower()
     payment_status = raw_pay_st if raw_pay_st in ("pending", "paid") else "pending"
@@ -572,9 +574,17 @@ def format_order_telegram_html(order: Dict[str, Any]) -> str:
     subtot = int(order.get("subtotal", 0))
     dfee = int(order.get("delivery_fee", 0))
     tot = int(order.get("total", 0))
+    raw_pm = str(order.get("payment_method") or "cash").lower()
+    if raw_pm == "card":
+        pay_label = "💳 Karta / Terminal (Карта)"
+    elif raw_pm in ("online", "click", "payme"):
+        pay_label = "📱 Click / Payme (Онлайн)"
+    else:
+        pay_label = "💵 Naqd pul (Наличные)"
     lines.append("")
     lines.append(f"💵 <b>Taomlar summasi:</b> {subtot:,} so'm".replace(",", " "))
     lines.append(f"🛵 <b>Yetkazib berish:</b> {dfee:,} so'm".replace(",", " "))
+    lines.append(f"💳 <b>To'lov turi:</b> {pay_label}")
     lines.append(f"💰 <b>JAMI TO'LOV: {tot:,} so'm</b>".replace(",", " "))
     return chr(10).join(lines)
 async def send_telegram_group_notification(bot_instance: Optional[Bot], order: Dict[str, Any]) -> bool:
@@ -669,9 +679,17 @@ async def send_telegram_customer_receipt(bot_instance: Optional[Bot], order: Dic
     subtot = int(order.get("subtotal", 0))
     dfee = int(order.get("delivery_fee", 0))
     tot = int(order.get("total", 0))
+    raw_pm = str(order.get("payment_method") or "cash").lower()
+    if raw_pm == "card":
+        pay_label = "💳 Karta / Terminal (Карта)"
+    elif raw_pm in ("online", "click", "payme"):
+        pay_label = "📱 Click / Payme (Онлайн)"
+    else:
+        pay_label = "💵 Naqd pul (Наличные)"
     lines.append("")
     lines.append(f"💵 <b>Taomlar summasi:</b> {subtot:,} so'm".replace(",", " "))
     lines.append(f"🛵 <b>Yetkazib berish:</b> {dfee:,} so'm".replace(",", " "))
+    lines.append(f"💳 <b>To'lov turi:</b> {pay_label}")
     lines.append(f"💰 <b>JAMI TO'LOV: {tot:,} so'm</b>".replace(",", " "))
     lines.append("")
     lines.append("<b>American Caffetteria</b> ni tanlaganingiz uchun tashakkur!")
@@ -749,8 +767,6 @@ def is_admin_authenticated(request: web.Request) -> bool:
         token = request.query.get("token")
     return verify_session_token(token) is not None
 
-LOGIN_ATTEMPTS: Dict[str, List[float]] = {}
-
 def is_login_rate_limited(ip: str) -> bool:
     now = time.time()
     history = [t for t in LOGIN_ATTEMPTS.get(ip, []) if now - t < 60.0]
@@ -785,14 +801,27 @@ def get_order_shift_date(date_str: str) -> str:
     except Exception:
         return date_str[:10]
 
-def check_csrf_protection(request: web.Request) -> bool:
-    return True
 # =====================================================================
 # HTTP API HANDLERS (AIOHTTP)
 # =====================================================================
 CORS_ORIGIN_REGEX = re.compile(
     r"^(https?://(localhost|127\.0\.0\.1)(:\d+)?|http://192\.168\.\d{1,3}\.\d{1,3}(:\d+)?|http://10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?|capacitor://localhost|https?://([a-zA-Z0-9-]+\.)*telegram\.org)$"
 )
+
+def check_csrf_protection(request: web.Request) -> bool:
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return True
+    if request.headers.get("X-Requested-With") or request.headers.get("Authorization"):
+        return True
+    origin = request.headers.get("Origin") or ""
+    if origin and (origin in ALLOWED_ORIGINS or CORS_ORIGIN_REGEX.match(origin)):
+        return True
+    referer = request.headers.get("Referer") or ""
+    if referer:
+        host = request.headers.get("Host", "")
+        if host and (host in referer or "localhost" in referer or "127.0.0.1" in referer):
+            return True
+    return False
 
 BLOCKED_PATH_PREFIXES = ("/.", "/telegram_bot", "/android", "/tests", "/node_modules")
 BLOCKED_EXTENSIONS = (".env", ".py", ".pyc", ".db", ".db-wal", ".db-shm", ".bat", ".sh", ".md", ".apk", ".log")
@@ -1006,7 +1035,7 @@ async def api_admin_login(request: web.Request) -> web.Response:
         token,
         max_age=SESSION_TTL_SECONDS,
         httponly=True,
-        secure=False,
+        secure=COOKIE_SECURE,
         samesite="Lax",
         path="/",
     )
@@ -1909,10 +1938,28 @@ async def main():
                 logger.warning("MenuButtonWebApp xatosi: %s", exc)
 
         logger.info("Telegram-bot polling rejimida ishga tushmoqda...")
+        async def run_bot_polling():
+            while True:
+                try:
+                    await dp.start_polling(bot_instance)
+                    break
+                except asyncio.CancelledError:
+                    break
+                except Exception as exc:
+                    logger.warning("Telegram polling tarmog'ida xatolik: %s. 5 soniyadan so'ng qayta uriniladi...", exc)
+                    await asyncio.sleep(5)
+
+        polling_task = asyncio.create_task(run_bot_polling())
         try:
-            await dp.start_polling(bot_instance)
+            await asyncio.Event().wait()
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            pass
         finally:
-            await bot_instance.session.close()
+            polling_task.cancel()
+            try:
+                await bot_instance.session.close()
+            except Exception:
+                pass
     else:
         logger.warning("BOT_TOKEN ko'rsatilmagan. Faqat veb-server ishlaydi.")
         await asyncio.Event().wait()

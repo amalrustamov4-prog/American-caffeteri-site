@@ -14,6 +14,7 @@ EXCLUDE_DIRS = {
     "__pycache__",
     ".gradle",
     "build",
+    ".vercel",
 }
 
 EXCLUDE_EXTS = {

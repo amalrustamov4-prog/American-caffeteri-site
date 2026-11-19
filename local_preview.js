@@ -305,6 +305,8 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
     const delivFee = delivType === 'delivery' ? (afterDisc >= 100000 ? 0 : 10000) : 0;
     const total = afterDisc + delivFee;
     const nowUtc = new Date().toISOString();
+    const rawPayMethod = String(body.payment_method || 'cash').trim().toLowerCase();
+    const paymentMethod = (rawPayMethod === 'click' || rawPayMethod === 'payme') ? 'online' : (rawPayMethod === 'card' ? 'card' : 'cash');
 
     const order = {
       id,
@@ -315,6 +317,7 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       delivery_type_label: delivType === 'pickup' ? 'Olib ketish' : (delivType === 'dine_in' ? 'Zalda' : 'Yetkazib berish'),
       address: body.address || '',
       comment: body.comment || '',
+      payment_method: paymentMethod,
       source: body.source || 'web',
       items,
       subtotal,

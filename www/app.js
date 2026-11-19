@@ -466,6 +466,22 @@ try {
     } catch (e) {}
   }
 
+  function getApiBaseUrl() {
+    if (typeof window !== "undefined" && window.API_BASE_URL) {
+      return String(window.API_BASE_URL).replace(/\/+$/, "");
+    }
+    if (typeof window !== "undefined") {
+      const isCapacitor = window.location.protocol === "capacitor:" ||
+        window.location.protocol === "file:" ||
+        Boolean(window.Capacitor) ||
+        (window.location.hostname === "localhost" && !window.location.port);
+      if (isCapacitor) {
+        return "https://american11.vercel.app";
+      }
+    }
+    return "";
+  }
+
   let currentLang = safeGetStorage('american_lang', 'ru');
   if (!i18n[currentLang]) currentLang = 'ru';
   let activeCategory = 'all';
@@ -999,7 +1015,7 @@ try {
         submitBtn.innerHTML = `<span>Saqlanmoqda...</span>`;
 
         try {
-          const apiBase = (window.location.protocol.startsWith('http')) ? "" : (window.API_BASE_URL || "http://localhost:8080");
+          const apiBase = getApiBaseUrl();
           const res = await fetch(`${apiBase}/api/register`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1041,9 +1057,6 @@ try {
     }
   }
 
-  // --- Built-in AI Agent ---
-  function setupAIAgent() {}
-
   window.addMultipleToCart = function(csvIds) {
     if (!csvIds) return;
     const ids = csvIds.split(',').filter(Boolean);
@@ -1057,10 +1070,8 @@ try {
     renderMenuItems();
     updateCartUI();
     renderCartDrawerItems();
-    showToast(`🎉 Все ${ids.length} блюда от ИИ-Официанта добавлены в корзину!`);
+    showToast(`🎉 Все ${ids.length} блюда добавлены в корзину!`);
   };
-
-  window.askAIAgent = function() {};
 
   // --- Fly Item To Cart Animation ---
   function flyItemToCart(sourceEl, imageSrc) {
@@ -1156,7 +1167,6 @@ try {
     setupSearch();
     setupCartDrawer();
     setupRegistrationModal();
-    setupAIAgent();
     setupModal();
     setupReceiptModal();
     setupOrdersHistoryModal();
@@ -1322,7 +1332,7 @@ try {
       };
     } catch (_) {}
   }
-  fetch("/api/stoplist").then(r => r.json()).then(d => {
+  fetch(`${getApiBaseUrl()}/api/stoplist`).then(r => r.json()).then(d => {
     if (d && Array.isArray(d.stoplist)) {
       window.stoppedDishIds = new Set(d.stoplist);
       localStorage.setItem("ac_stoplist", JSON.stringify(d.stoplist));
@@ -1331,9 +1341,12 @@ try {
   }).catch(() => {});
 
   function initPublicStoplistStream() {
-    if (!("EventSource" in window) || !window.location.protocol.startsWith("http")) return;
+    if (!("EventSource" in window)) return;
+    const base = getApiBaseUrl();
+    const streamUrl = base ? `${base}/api/stream` : (window.location.protocol.startsWith("http") ? "/api/stream" : "");
+    if (!streamUrl) return;
     try {
-      const es = new EventSource("/api/stream");
+      const es = new EventSource(streamUrl);
       es.addEventListener("stoplist_updated", (ev) => {
         try {
           const data = JSON.parse(ev.data);
@@ -2198,7 +2211,7 @@ try {
     };
 
     try {
-      const apiBase = window.API_BASE_URL || "";
+      const apiBase = getApiBaseUrl();
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 12000);
       let response;
@@ -2505,7 +2518,7 @@ ${savedOrder.comment ? `💬 Комментарий: ${savedOrder.comment}\n` : 
       if (ids.length === 0) return;
 
       try {
-        const apiBase = window.location.protocol.startsWith('http') ? '' : (window.API_BASE_URL || 'http://localhost:8080');
+        const apiBase = getApiBaseUrl();
         const res = await fetch(`${apiBase}/api/orders/status?ids=${ids.join(',')}`);
         const data = await res.json().catch(() => ({}));
         if (data.ok && Array.isArray(data.orders)) {
