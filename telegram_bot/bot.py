@@ -91,7 +91,7 @@ ALLOWED_ORIGINS = {
     o.strip()
     for o in os.getenv(
         "ALLOWED_ORIGINS",
-        "http://localhost:8080,http://127.0.0.1:8080,capacitor://localhost,http://localhost",
+        "http://localhost:8080,http://127.0.0.1:8080,capacitor://localhost,http://localhost,https://american11.vercel.app,https://american11-fullforever.vercel.app",
     ).split(",")
     if o.strip()
 }
@@ -453,7 +453,9 @@ def validate_and_build_order(payload: Dict[str, Any], default_source: str = "web
     total = discounted_subtotal + delivery_fee
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     raw_pay_m = str(payload.get("payment_method") or "cash").strip().lower()
-    if raw_pay_m in ("click", "payme"):
+    if raw_pay_m in ("terminal", "humo", "uzcard"):
+        raw_pay_m = "card"
+    elif raw_pay_m in ("click", "payme", "online"):
         raw_pay_m = "online"
     payment_method = raw_pay_m if raw_pay_m in ("cash", "card", "online") else "cash"
     raw_pay_st = str(payload.get("payment_status") or "pending").strip().lower()
@@ -805,7 +807,7 @@ def get_order_shift_date(date_str: str) -> str:
 # HTTP API HANDLERS (AIOHTTP)
 # =====================================================================
 CORS_ORIGIN_REGEX = re.compile(
-    r"^(https?://(localhost|127\.0\.0\.1)(:\d+)?|http://192\.168\.\d{1,3}\.\d{1,3}(:\d+)?|http://10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?|capacitor://localhost|https?://([a-zA-Z0-9-]+\.)*telegram\.org)$"
+    r"^(https?://(localhost|127\.0\.0\.1)(:\d+)?|http://192\.168\.\d{1,3}\.\d{1,3}(:\d+)?|http://10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?|capacitor://localhost|https?://([a-zA-Z0-9-]+\.)*vercel\.app|https?://([a-zA-Z0-9-]+\.)*telegram\.org)$"
 )
 
 def check_csrf_protection(request: web.Request) -> bool:
@@ -819,7 +821,7 @@ def check_csrf_protection(request: web.Request) -> bool:
     referer = request.headers.get("Referer") or ""
     if referer:
         host = request.headers.get("Host", "")
-        if host and (host in referer or "localhost" in referer or "127.0.0.1" in referer):
+        if host and (host in referer or "localhost" in referer or "127.0.0.1" in referer or "vercel.app" in referer):
             return True
     return False
 

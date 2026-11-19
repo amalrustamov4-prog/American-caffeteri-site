@@ -306,7 +306,7 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
     const total = afterDisc + delivFee;
     const nowUtc = new Date().toISOString();
     const rawPayMethod = String(body.payment_method || 'cash').trim().toLowerCase();
-    const paymentMethod = (rawPayMethod === 'click' || rawPayMethod === 'payme') ? 'online' : (rawPayMethod === 'card' ? 'card' : 'cash');
+    const paymentMethod = (rawPayMethod === 'click' || rawPayMethod === 'payme' || rawPayMethod === 'online') ? 'online' : (['card', 'terminal', 'humo', 'uzcard'].includes(rawPayMethod) ? 'card' : 'cash');
 
     const order = {
       id,

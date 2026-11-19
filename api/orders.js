@@ -45,7 +45,7 @@ function escapeHtml(str) {
 
 export default async function handler(req, res) {
   const origin = req.headers.origin || '';
-  const isAllowedOrigin = /^(https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?|http:\/\/192\.168\.\d{1,3}\.\d{1,3}(:\d+)?|http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?|capacitor:\/\/localhost|https?:\/\/([a-zA-Z0-9-]+\.)*telegram\.org)$/.test(origin);
+  const isAllowedOrigin = !origin || /^(https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?|http:\/\/192\.168\.\d{1,3}\.\d{1,3}(:\d+)?|http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?|capacitor:\/\/localhost|https?:\/\/([a-zA-Z0-9-]+\.)*vercel\.app|https?:\/\/([a-zA-Z0-9-]+\.)*telegram\.org)$/.test(origin);
   if (isAllowedOrigin && origin) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -70,7 +70,7 @@ export default async function handler(req, res) {
     const payload = req.body || {};
     const rawItems = Array.isArray(payload.items) ? payload.items : [];
     if (rawItems.length === 0 || rawItems.length > 50) {
-      return res.status(400).json({ ok: false, error: 'Savat bo\'sh yoki taomlar soni juda ko\'p.' });
+      return res.status(400).json({ ok: false, error: "Savat bo'sh yoki taomlar soni juda ko'p." });
     }
 
     const items = [];
@@ -100,10 +100,10 @@ export default async function handler(req, res) {
     const rawPayMethod = String(payload.payment_method || customer.payment_method || 'cash').trim().toLowerCase();
     let paymentMethod = 'cash';
     let payMethodLabel = "💵 Naqd pul (Наличные)";
-    if (rawPayMethod === 'card') {
+    if (['card', 'terminal', 'humo', 'uzcard'].includes(rawPayMethod)) {
       paymentMethod = 'card';
       payMethodLabel = "💳 Karta / Terminal (Карта)";
-    } else if (rawPayMethod === 'online' || rawPayMethod === 'click' || rawPayMethod === 'payme') {
+    } else if (['online', 'click', 'payme'].includes(rawPayMethod)) {
       paymentMethod = 'online';
       payMethodLabel = "📱 Click / Payme (Онлайн)";
     }
@@ -138,6 +138,11 @@ export default async function handler(req, res) {
     if (discount > 0) {
       orderCard += `🎁 <b>Chegirma (${escapeHtml(promoCode)}):</b> -${discount.toLocaleString('ru-RU')} so'm\n`;
     }
+    if (deliveryFee > 0) {
+      orderCard += `🛵 <b>Yetkazib berish:</b> ${deliveryFee.toLocaleString('ru-RU')} so'm\n`;
+    } else if (deliveryType === 'delivery') {
+      orderCard += `🛵 <b>Yetkazib berish:</b> Bepul (Aksiya)\n`;
+    }
     orderCard += `💳 <b>To'lov turi:</b> ${escapeHtml(payMethodLabel)}\n`;
     orderCard += `💰 <b>JAMI TO'LOV:</b> <b>${totalAmount.toLocaleString('ru-RU')} so'm</b>\n`;
     orderCard += `🕒 <b>Vaqt:</b> ${new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent' })}`;
@@ -156,7 +161,7 @@ export default async function handler(req, res) {
               inline_keyboard: [
                 [
                   { text: '✅ Qabul qilish', callback_data: `ordst:${numericId}:accepted` },
-                  { text: '🍳 Oshxonada', callback_data: `ordst:${numericId}:cooking` }
+                  { text: '👨‍🍳 Oshxonada', callback_data: `ordst:${numericId}:cooking` }
                 ],
                 [
                   { text: '🛵 Kuryerda', callback_data: `ordst:${numericId}:delivering` },

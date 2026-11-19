@@ -603,11 +603,20 @@
     }
   }
 
-  // ==================== AUTHENTICATION ====================
+  // ==================== AUTHENTICATION & API BASE ====================
+  function getAdminApiUrl(endpoint) {
+    const base = (typeof window !== "undefined" && window.ADMIN_API_BASE_URL) ||
+                 (typeof window !== "undefined" && window.API_BASE_URL) ||
+                 ((typeof localStorage !== "undefined") && localStorage.getItem("pos_api_base_url")) || "";
+    const cleanBase = base ? String(base).replace(/\/+$/, "") : "";
+    const cleanEp = endpoint.startsWith("/") ? endpoint : "/" + endpoint;
+    return cleanBase + cleanEp;
+  }
+
   async function checkAuth() {
     if (state.token) {
       try {
-        const res = await fetch("/api/admin/me", { headers: getAuthHeaders() });
+        const res = await fetch(getAdminApiUrl("/api/admin/me"), { headers: getAuthHeaders() });
         if (res.ok) {
           const data = await res.json();
           if (data.ok) {
@@ -638,12 +647,12 @@
     const password = document.getElementById("login-password").value;
 
     try {
-      const res = await fetch("/api/admin/login", {
+      const res = await fetch(getAdminApiUrl("/api/admin/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
         body: JSON.stringify({ username, password }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok) {
         state.token = data.token || "";
         state.username = data.username || "admin";
@@ -652,7 +661,11 @@
         showAdminUI();
       } else {
         if (errBox) {
-          errBox.textContent = data.error || "Login yoki parol xato.";
+          if (res.status === 404) {
+            errBox.textContent = "Server topilmadi (404). Agar Vercel yoki alohida domenda bo'lsangiz, asosiy POS server (bot.py) manzilini ko'rsating.";
+          } else {
+            errBox.textContent = data.error || "Login yoki parol xato.";
+          }
           errBox.hidden = false;
         }
       }
@@ -666,7 +679,7 @@
 
   async function handleLogout() {
     try {
-      await fetch("/api/admin/logout", { method: "POST", headers: getAuthHeaders() });
+      await fetch(getAdminApiUrl("/api/admin/logout"), { method: "POST", headers: getAuthHeaders() });
     } catch (e) {}
     state.token = "";
     localStorage.removeItem("ac_admin_token");
@@ -752,7 +765,7 @@
     }
 
     // 2. Server-Sent Events (SSE) — Connect to authenticated admin stream
-    const sseUrl = "/api/admin/stream?token=" + encodeURIComponent(state.token);
+    const sseUrl = getAdminApiUrl("/api/admin/stream?token=" + encodeURIComponent(state.token));
     try {
       state.sse = new EventSource(sseUrl);
 
@@ -834,7 +847,7 @@
 
   async function fetchOrders() {
     try {
-      const res = await fetch("/api/admin/orders?limit=100", { headers: getAuthHeaders() });
+      const res = await fetch(getAdminApiUrl("/api/admin/orders?limit=100"), { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         if (data.ok && Array.isArray(data.orders)) {
@@ -846,7 +859,7 @@
 
   async function fetchOrdersSilently() {
     try {
-      const res = await fetch("/api/admin/orders?limit=50", { headers: getAuthHeaders() });
+      const res = await fetch(getAdminApiUrl("/api/admin/orders?limit=50"), { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         if (data.ok && Array.isArray(data.orders)) {
@@ -1395,7 +1408,7 @@
     if (confirmBtn) confirmBtn.disabled = true;
 
     try {
-      const res = await fetch("/api/orders", {
+      const res = await fetch(getAdminApiUrl("/api/orders"), {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
         body: JSON.stringify(orderPayload),
@@ -1841,7 +1854,7 @@
 
   async function updateOrderStatus(id, newStatus) {
     try {
-      const res = await fetch(`/api/admin/orders/${id}/status`, {
+      const res = await fetch(getAdminApiUrl(`/api/admin/orders/${id}/status`), {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -1867,7 +1880,7 @@
   // ==================== 17-TABLE MAP & ONLINE RESERVATIONS ====================
   async function fetchReservations() {
     try {
-      const res = await fetch("/api/reservations", { headers: getAuthHeaders() });
+      const res = await fetch(getAdminApiUrl("/api/reservations"), { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         if (data.ok && Array.isArray(data.reservations)) {
@@ -1956,7 +1969,7 @@
   // ==================== STOP-LIST MANAGER ====================
   async function fetchStoplist() {
     try {
-      const res = await fetch("/api/stoplist", { headers: getAuthHeaders() });
+      const res = await fetch(getAdminApiUrl("/api/stoplist"), { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         if (data.ok && Array.isArray(data.stoplist)) {
@@ -2021,7 +2034,7 @@
       card.querySelector(".btn-stoplist-toggle").addEventListener("click", async () => {
         const nextStopped = !isStopped;
         try {
-          const res = await fetch("/api/stoplist", {
+          const res = await fetch(getAdminApiUrl("/api/stoplist"), {
             method: "POST",
             headers: { "Content-Type": "application/json", ...getAuthHeaders() },
             body: JSON.stringify({ item_id: it.id, stopped: nextStopped }),
@@ -2049,7 +2062,7 @@
   // ==================== SHIFT REPORT (X-REPORT / Z-REPORT & TOP-5 DISHES) ====================
   async function fetchStats() {
     try {
-      const res = await fetch("/api/admin/stats", { headers: getAuthHeaders() });
+      const res = await fetch(getAdminApiUrl("/api/admin/stats"), { headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         if (data.ok) {
@@ -2157,7 +2170,7 @@
         confirmBtn.disabled = true;
 
         try {
-          const res = await fetch("/api/admin/cash-operations", {
+          const res = await fetch(getAdminApiUrl("/api/admin/cash-operations"), {
             method: "POST",
             headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
             body: JSON.stringify({ type, amount, reason, operator: state.username || "admin" }),

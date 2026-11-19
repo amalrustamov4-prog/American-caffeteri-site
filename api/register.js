@@ -10,7 +10,7 @@ function escapeHtml(str) {
 
 export default async function handler(req, res) {
   const origin = req.headers.origin || '';
-  const isAllowedOrigin = /^(https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?|http:\/\/192\.168\.\d{1,3}\.\d{1,3}(:\d+)?|http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?|capacitor:\/\/localhost|https?:\/\/([a-zA-Z0-9-]+\.)*telegram\.org)$/.test(origin);
+  const isAllowedOrigin = !origin || /^(https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?|http:\/\/192\.168\.\d{1,3}\.\d{1,3}(:\d+)?|http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?|capacitor:\/\/localhost|https?:\/\/([a-zA-Z0-9-]+\.)*vercel\.app|https?:\/\/([a-zA-Z0-9-]+\.)*telegram\.org)$/.test(origin);
   if (isAllowedOrigin && origin) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -43,28 +43,28 @@ export default async function handler(req, res) {
     const source = String(payload.source || 'web_vercel').trim().slice(0, 30);
 
     if (firstName.length < 2 || phone.length < 7) {
-      return res.status(400).json({ ok: false, error: 'Пожалуйста, укажите имя и номер телефона.' });
+      return res.status(400).json({ ok: false, error: 'Iltimos, ism va telefon raqamingizni kiriting / Укажите имя и телефон.' });
     }
 
     const fullName = `${firstName} ${lastName}`.trim();
     const botToken = (process.env.BOT_TOKEN || '9019814630:AAG7-0N0tbjiuWINPaiVJLNCYJhly9I_gyg').trim();
     const groupId = (process.env.GROUP_CHAT_ID || '-1004439148911').trim();
 
-    let card = `👤 <b>НОВАЯ РЕГИСТРАЦИЯ КЛИЕНТА</b>\n`;
+    let card = `👤 <b>YANGI MIJOZ RO'YXATDAN O'TDI / РЕГИСТРАЦИЯ</b>\n`;
     card += `━━━━━━━━━━━━━━━━━━━━━\n`;
-    card += `🏷 <b>Имя:</b> ${escapeHtml(fullName)}\n`;
-    card += `📞 <b>Телефон:</b> <code>${escapeHtml(phone)}</code>\n`;
+    card += `🏷 <b>Ism:</b> ${escapeHtml(fullName)}\n`;
+    card += `📞 <b>Telefon:</b> <code>${escapeHtml(phone)}</code>\n`;
     if (username) {
       card += `✈️ <b>Telegram:</b> @${escapeHtml(username.replace('@', ''))}\n`;
     }
     if (location) {
-      card += `📍 <b>Адрес:</b> ${escapeHtml(location)}\n`;
+      card += `📍 <b>Manzil:</b> ${escapeHtml(location)}\n`;
     }
     if (lat && lng) {
-      card += `🗺 <b>GPS:</b> <a href="https://maps.google.com/?q=${encodeURIComponent(lat)},${encodeURIComponent(lng)}">Открыть на карте</a>\n`;
+      card += `🗺 <b>GPS:</b> <a href="https://maps.google.com/?q=${encodeURIComponent(lat)},${encodeURIComponent(lng)}">Xaritada ochish</a>\n`;
     }
-    card += `📱 <b>Источник:</b> ${escapeHtml(source.toUpperCase())}\n`;
-    card += `🕒 <b>Время:</b> ${new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent' })}`;
+    card += `📱 <b>Manba:</b> ${escapeHtml(source.toUpperCase())}\n`;
+    card += `🕒 <b>Vaqt:</b> ${new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent' })}`;
 
     let groupNotified = false;
     try {
@@ -87,11 +87,10 @@ export default async function handler(req, res) {
     return res.status(200).json({
       ok: true,
       group_notified: groupNotified,
-      message: 'Регистрация успешно принята!'
+      message: "Ro'yxatdan o'tish muvaffaqiyatli qabul qilindi / Регистрация принята!"
     });
   } catch (err) {
     console.error('Register handler error:', err);
-    return res.status(500).json({ ok: false, error: 'Внутренняя ошибка сервера' });
+    return res.status(500).json({ ok: false, error: 'Server xatosi / Внутренняя ошибка сервера' });
   }
 }
-

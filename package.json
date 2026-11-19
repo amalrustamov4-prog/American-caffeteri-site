@@ -10,7 +10,7 @@
     "sync": "python sync_web.py",
     "test": "python tests/test_suite.py && python tests/test_realtime_endpoints.py",
     "zip": "python make_export_zips.py",
-    "deploy:vercel": "vercel --prod --token vcp_3QZesduPL4fL0JPUQk176tQUqioZt7p08DVjBwTByHDFD2sQld3O0Wsa --yes"
+    "deploy:vercel": "vercel build --prod --yes && vercel deploy --prebuilt --prod --yes"
   },
   "keywords": [
     "american-caffetteria",
