@@ -21,6 +21,11 @@ EXCLUDE_EXTS = {
     ".DS_Store",
     ".jks",
     ".keystore",
+    ".db",
+    ".db-wal",
+    ".db-shm",
+    ".sqlite",
+    ".sqlite3",
 }
 
 EXCLUDE_FILES = {
