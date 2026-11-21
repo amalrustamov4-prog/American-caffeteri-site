@@ -1104,7 +1104,11 @@ async def handle_order_append_logic(request: web.Request, order_id: int, payload
         price = int(it.get("price") or 0)
         cat_dish = MENU_CATALOG.get(iid) or MENU_CATALOG.get(base_id)
         if cat_dish:
-            name = cat_dish["name"].get("uz") or cat_dish["name"].get("ru") or iid
+            cd_name = cat_dish.get("name")
+            if isinstance(cd_name, dict):
+                name = cd_name.get("uz") or cd_name.get("ru") or iid
+            else:
+                name = str(cd_name or it.get("name") or iid)
             if price <= 0:
                 price = int(cat_dish["price"])
         else:
