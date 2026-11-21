@@ -684,7 +684,7 @@
           <label class="f-d uppercase tracking-wider text-[14px] font-bold block mb-1" data-i18n="cart_delivery_type">
             Способ получения
           </label>
-          <div class="grid grid-cols-2 gap-1.5">
+          <div class="grid grid-cols-3 gap-1.5">
             <label class="flex items-center gap-1.5 p-2 rounded border border-[#232424]/30 bg-white/50 cursor-pointer hover:border-[#EB2A2A]">
               <input type="radio" name="delivery_choice" id="opt-delivery" checked class="accent-[#EB2A2A]">
               <span class="text-[12px] font-medium" data-i18n="cart_delivery_option">Доставка</span>
@@ -693,6 +693,10 @@
               <input type="radio" name="delivery_choice" id="opt-pickup" class="accent-[#EB2A2A]">
               <span class="text-[12px] font-medium" data-i18n="cart_pickup_option">Самовывоз</span>
             </label>
+            <label class="flex items-center gap-1.5 p-2 rounded border border-[#232424]/30 bg-white/50 cursor-pointer hover:border-[#EB2A2A]">
+              <input type="radio" name="delivery_choice" id="opt-dinein" class="accent-[#EB2A2A]">
+              <span class="text-[12px] font-medium" data-i18n="cart_dine_in_option">В кафе (В зале)</span>
+            </label>
           </div>
         </div>
 
@@ -700,7 +704,7 @@
           <label class="f-d uppercase tracking-wider text-[14px] font-bold block mb-1" data-i18n="cart_pay_method">
             Способ оплаты
           </label>
-          <div class="grid grid-cols-3 gap-1.5">
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-1.5" id="cart-payment-methods">
             <label class="flex items-center gap-1.5 p-2 rounded border border-[#232424]/30 bg-white/50 cursor-pointer hover:border-[#EB2A2A]">
               <input type="radio" name="payment_choice" value="cash" id="pay-cash" checked class="accent-[#EB2A2A]">
               <span class="text-[12px] font-medium" data-i18n="pay_cash">Наличные</span>
@@ -712,6 +716,10 @@
             <label class="flex items-center gap-1.5 p-2 rounded border border-[#232424]/30 bg-white/50 cursor-pointer hover:border-[#EB2A2A]">
               <input type="radio" name="payment_choice" value="online" id="pay-online" class="accent-[#EB2A2A]">
               <span class="text-[12px] font-medium" data-i18n="pay_online">Click/Payme</span>
+            </label>
+            <label id="pay-exit-wrap" class="flex items-center gap-1.5 p-2 rounded border border-[#232424]/30 bg-white/50 cursor-pointer hover:border-[#EB2A2A]">
+              <input type="radio" name="payment_choice" value="unpaid" id="pay-exit" class="accent-[#EB2A2A]">
+              <span class="text-[12px] font-medium" data-i18n="pay_exit">При выходе</span>
             </label>
           </div>
         </div>
@@ -743,6 +751,22 @@
             <button type="button" id="cart-gps-btn" class="px-2.5 py-2 rounded bg-[#232424] hover:bg-[#EB2A2A] text-white cursor-pointer" title="Определить мою GPS геолокацию">
               <i class="ti ti-current-location"></i>
             </button>
+          </div>
+          <div id="cart-table-wrap" class="hidden space-y-1">
+            <select id="order-table-select" class="w-full px-3 py-2 text-[14px] rounded border border-[#232424]/40 bg-white/90 focus:outline-none focus:border-[#EB2A2A] font-bold">
+              <option value="1-Stol">🪑 1-Stol (4 o'rinli)</option>
+              <option value="2-Stol">🪑 2-Stol (4 o'rinli)</option>
+              <option value="3-Stol">🪑 3-Stol (4 o'rinli)</option>
+              <option value="4-Stol">🪑 4-Stol (6 o'rinli)</option>
+              <option value="5-Stol">🪑 5-Stol (4 o'rinli)</option>
+              <option value="6-Stol">🪑 6-Stol (6 o'rinli)</option>
+              <option value="7-Stol">🪑 7-Stol (4 o'rinli)</option>
+              <option value="8-Stol">🪑 8-Stol (8 o'rinli)</option>
+              <option value="VIP Xona">👑 VIP Xona (10 o'rinli)</option>
+            </select>
+            <div class="text-[11.5px] text-[#166534] font-bold" data-i18n="cart_dine_in_note">
+              ☕ To'lov kafedan chiqishda kassada to'lanadi. Xohlagan payt qo'shimcha taom buyurtma qilishingiz mumkin!
+            </div>
           </div>
           <input
             type="text"

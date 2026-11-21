@@ -106,6 +106,9 @@ export default async function handler(req, res) {
     } else if (['online', 'click', 'payme'].includes(rawPayMethod)) {
       paymentMethod = 'online';
       payMethodLabel = "📱 Click / Payme (Онлайн)";
+    } else if (['unpaid', 'postpaid', 'exit', 'chiqishda'].includes(rawPayMethod) || (deliveryType === 'dine_in' && rawPayMethod !== 'card' && rawPayMethod !== 'online')) {
+      paymentMethod = 'unpaid';
+      payMethodLabel = "⏳ Chiqishda to'lash (Kassada / Пост-оплата)";
     }
 
     const PROMOS = { AMERICAN10: 0.10, HALAL5: 0.05, SUPER2026: 0.15, BLEST10: 0.10 };
@@ -123,12 +126,15 @@ export default async function handler(req, res) {
     const botToken = (process.env.BOT_TOKEN || '9019814630:AAG7-0N0tbjiuWINPaiVJLNCYJhly9I_gyg').trim();
     const groupId = (process.env.GROUP_CHAT_ID || '-1004439148911').trim();
 
-    let orderCard = `🛍 <b>YANGI BUYURTMA ${escapeHtml(orderCode)} — AMERICAN CAFFETTERIA</b>\n`;
+    const isDoZakaz = Boolean(payload.append_to_order_id);
+    let orderCard = isDoZakaz
+      ? `➕ <b>QO'SHIMCHA BUYURTMA (DO-ZAKAZ) ${escapeHtml(orderCode)} — AMERICAN CAFFETTERIA</b>\n`
+      : `🛍 <b>YANGI BUYURTMA ${escapeHtml(orderCode)} — AMERICAN CAFFETTERIA</b>\n`;
     orderCard += `━━━━━━━━━━━━━━━━━━━━━\n`;
     orderCard += `👤 <b>Mijoz:</b> ${escapeHtml(customerName)}\n`;
     orderCard += `📞 <b>Telefon:</b> <code>${escapeHtml(phone)}</code>\n`;
-    orderCard += `🚚 <b>Turi:</b> ${deliveryType === 'pickup' ? 'Olib ketish' : (deliveryType === 'dine_in' ? 'Zalda' : 'Yetkazib berish')}\n`;
-    if (address) orderCard += `📍 <b>Manzil:</b> ${escapeHtml(address)}\n`;
+    orderCard += `🚚 <b>Turi:</b> ${deliveryType === 'pickup' ? 'Olib ketish' : (deliveryType === 'dine_in' ? 'Zalda (Kafeda)' : 'Yetkazib berish')}\n`;
+    if (address) orderCard += `📍 <b>Manzil / Stol:</b> ${escapeHtml(address)}\n`;
     if (comment) orderCard += `💬 <b>Izoh:</b> <i>${escapeHtml(comment)}</i>\n`;
     orderCard += `\n📋 <b>Buyurtma tarkibi:</b>\n`;
     items.forEach((it, idx) => {
@@ -143,7 +149,8 @@ export default async function handler(req, res) {
     } else if (deliveryType === 'delivery') {
       orderCard += `🛵 <b>Yetkazib berish:</b> Bepul (Aksiya)\n`;
     }
-    orderCard += `💳 <b>To'lov turi:</b> ${escapeHtml(payMethodLabel)}\n`;
+    const payStatusLabel = paymentMethod === 'unpaid' ? "🟡 To'lanmagan (Chiqishda to'lanadi)" : "🟢 To'langan / Qabulda to'lanadi";
+    orderCard += `💳 <b>To'lov turi:</b> ${escapeHtml(payMethodLabel)} · <b>${escapeHtml(payStatusLabel)}</b>\n`;
     orderCard += `💰 <b>JAMI TO'LOV:</b> <b>${totalAmount.toLocaleString('ru-RU')} so'm</b>\n`;
     orderCard += `🕒 <b>Vaqt:</b> ${new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent' })}`;
 

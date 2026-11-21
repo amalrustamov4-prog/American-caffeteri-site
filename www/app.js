@@ -115,13 +115,16 @@ try {
       cart_delivery_type: "Способ получения",
       cart_delivery_option: "Доставка курьером",
       cart_pickup_option: "Самовывоз из кафе",
+      cart_dine_in_option: "В кафе (В зале)",
       cart_pay_method: "Способ оплаты",
       pay_cash: "Наличные",
       pay_card: "Терминал",
       pay_online: "Click/Payme",
+      pay_exit: "При выходе (В кассе)",
       cart_free_progress_more: "Добавьте ещё на {amount} сум для бесплатной доставки!",
       cart_free_progress_done: "🎉 У вас бесплатная доставка по Термезу!",
       cart_pickup_note: "Самовывоз из кафе — без платы за доставку (готовность 10–15 мин)",
+      cart_dine_in_note: "☕ Оплата в кассе при выходе из кафе. Дозаказ в любой момент!",
       cart_name_placeholder: "Ваше Имя и Фамилия",
       cart_phone_placeholder: "Телефон (+998 90 123 45 67)",
       cart_addr_placeholder: "Адрес доставки или GPS-локация в Термезе",
@@ -260,13 +263,16 @@ try {
       cart_delivery_type: "Qabul qilish usuli",
       cart_delivery_option: "Kuryer orqali yetkazish",
       cart_pickup_option: "Kafedan olib ketish",
+      cart_dine_in_option: "Kafeda (Zalda)",
       cart_pay_method: "To'lov usuli",
       pay_cash: "Naqd pul",
       pay_card: "Karta / Terminal",
       pay_online: "Click / Payme",
+      pay_exit: "Chiqishda (Kassada)",
       cart_free_progress_more: "Bepul yetkazib berish uchun yana {amount} so'mlik taom qo'shing!",
       cart_free_progress_done: "🎉 Termiz bo'ylab yetkazib berish siz uchun BEPUL!",
       cart_pickup_note: "Kafedan olib ketish — yetkazib berish to'lovisiz (10–15 daqiqada tayyor)",
+      cart_dine_in_note: "☕ To'lov kafedan chiqib ketayotganda kassada to'lanadi. Xohlagan payt qo'shimcha taom buyurtma qilishingiz mumkin!",
       cart_name_placeholder: "Ism va Familiyangiz",
       cart_phone_placeholder: "Telefon (+998 90 123 45 67)",
       cart_addr_placeholder: "Termizdagi yetkazish manzili yoki GPS",
@@ -405,13 +411,16 @@ try {
       cart_delivery_type: "Fulfillment Method",
       cart_delivery_option: "Courier Delivery",
       cart_pickup_option: "Cafe Pickup",
+      cart_dine_in_option: "Dine-in (In cafe)",
       cart_pay_method: "Payment Method",
       pay_cash: "Cash",
       pay_card: "Terminal",
       pay_online: "Click / Payme",
+      pay_exit: "At exit (At cashier)",
       cart_free_progress_more: "Add {amount} UZS more to unlock FREE delivery!",
       cart_free_progress_done: "🎉 You unlocked FREE delivery across Termez!",
       cart_pickup_note: "Pickup from our cafe — zero delivery fee (ready in 10–15 min)",
+      cart_dine_in_note: "☕ Payment at cashier upon exit. You can order more dishes anytime!",
       cart_name_placeholder: "First & Last Name",
       cart_phone_placeholder: "Phone Number (+998 90 123 45 67)",
       cart_addr_placeholder: "Delivery address or GPS location in Termez",
@@ -1826,21 +1835,39 @@ try {
 
     const deliveryRadio = document.getElementById('opt-delivery');
     const pickupRadio = document.getElementById('opt-pickup');
+    const dineinRadio = document.getElementById('opt-dinein');
     const addrWrap = document.getElementById('cart-address-wrap');
+    const tableWrap = document.getElementById('cart-table-wrap');
+    const payExitRadio = document.getElementById('pay-exit');
+    const payCashRadio = document.getElementById('pay-cash');
 
     if (deliveryRadio && pickupRadio) {
       deliveryRadio.addEventListener('change', () => {
         deliveryType = 'delivery';
         if (addrWrap) addrWrap.classList.remove('hidden');
+        if (tableWrap) tableWrap.classList.add('hidden');
+        if (payExitRadio && payExitRadio.checked && payCashRadio) payCashRadio.checked = true;
         hideCartError();
         renderCartDrawerItems();
       });
       pickupRadio.addEventListener('change', () => {
         deliveryType = 'pickup';
         if (addrWrap) addrWrap.classList.add('hidden');
+        if (tableWrap) tableWrap.classList.add('hidden');
+        if (payExitRadio && payExitRadio.checked && payCashRadio) payCashRadio.checked = true;
         hideCartError();
         renderCartDrawerItems();
       });
+      if (dineinRadio) {
+        dineinRadio.addEventListener('change', () => {
+          deliveryType = 'dine_in';
+          if (addrWrap) addrWrap.classList.add('hidden');
+          if (tableWrap) tableWrap.classList.remove('hidden');
+          if (payExitRadio) payExitRadio.checked = true;
+          hideCartError();
+          renderCartDrawerItems();
+        });
+      }
     }
 
     const posDirectBtn = document.getElementById('cart-pos-direct-btn');
@@ -2020,7 +2047,7 @@ try {
     const progressFillEl = document.getElementById('cart-free-delivery-bar');
     if (progressTextEl && progressFillEl) {
       if (!isDelivery) {
-        progressTextEl.textContent = dict.cart_pickup_note;
+        progressTextEl.textContent = deliveryType === 'dine_in' ? (dict.cart_dine_in_note || dict.cart_pickup_note) : dict.cart_pickup_note;
         progressFillEl.style.width = '100%';
       } else if (subtotal >= freeThreshold) {
         progressTextEl.textContent = dict.cart_free_progress_done;
@@ -2150,6 +2177,9 @@ try {
     let address = (addrInput ? addrInput.value : (userProfile?.location || "")).trim();
     if (currentDeliveryType === "pickup") {
       address = address || "Kafedan olib ketish";
+    } else if (currentDeliveryType === "dine_in") {
+      const tableSelect = document.getElementById("order-table-select");
+      address = tableSelect ? tableSelect.value : (address || "1-Stol (Zalda)");
     }
     const comment = (commentInput ? commentInput.value : "").trim();
 
@@ -2184,7 +2214,12 @@ try {
     const isTgMiniApp = Boolean(window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData);
     const tgUserId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id || null;
 
-    const paymentMethod = (document.querySelector('input[name="payment_choice"]:checked')?.value || "cash");
+    const selectedPayRadio = document.querySelector('input[name="payment_choice"]:checked');
+    let paymentMethod = selectedPayRadio ? selectedPayRadio.value : (currentDeliveryType === "dine_in" ? "unpaid" : "cash");
+    if (currentDeliveryType === "dine_in" && (!selectedPayRadio || selectedPayRadio.value === "unpaid")) {
+      paymentMethod = "unpaid";
+    }
+
     const subtotalVal = calculateSubtotal();
     const discountVal = window.activePromoRate > 0 ? Math.round(subtotalVal * window.activePromoRate) : 0;
     const orderPayload = {
@@ -2195,6 +2230,7 @@ try {
       address: address,
       comment: comment,
       payment_method: paymentMethod,
+      payment_status: (currentDeliveryType === "dine_in" && paymentMethod === "unpaid") ? "pending" : "pending",
       promo_code: window.activePromoCode || "",
       discount: discountVal,
       source: isTgMiniApp ? "tg_miniapp" : (window.Capacitor ? "android_app" : "web"),
@@ -2281,9 +2317,12 @@ try {
         ? "🚗 Доставка"
         : (savedOrder.delivery_type === "dine_in" ? "🏛️ В зале" : "🏃 Самовывоз");
 
-      const payLabel = savedOrder.payment_method === "card"
-        ? "💳 Карта / Терминал"
-        : (savedOrder.payment_method === "online" ? "📱 Click / Payme (Онлайн)" : "💵 Наличные");
+      let payLabel = "💵 Наличные";
+      if (savedOrder.payment_method === "card") payLabel = "💳 Карта / Терминал";
+      else if (savedOrder.payment_method === "online") payLabel = "📱 Click / Payme (Онлайн)";
+      else if (savedOrder.payment_method === "unpaid" || savedOrder.delivery_type === "dine_in") {
+        payLabel = "☕ При выходе из кафе (В кассе)";
+      }
 
       const receiptText = `🧾 ЧЕК ЗАКАЗА #${savedOrder.id}
 ---------------------------------

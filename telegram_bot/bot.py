@@ -457,15 +457,25 @@ def validate_and_build_order(payload: Dict[str, Any], default_source: str = "web
         raw_pay_m = "card"
     elif raw_pay_m in ("click", "payme", "online"):
         raw_pay_m = "online"
-    payment_method = raw_pay_m if raw_pay_m in ("cash", "card", "online") else "cash"
-    raw_pay_st = str(payload.get("payment_status") or "pending").strip().lower()
-    payment_status = raw_pay_st if raw_pay_st in ("pending", "paid") else "pending"
+    elif raw_pay_m in ("unpaid", "postpaid", "exit", "chiqishda"):
+        raw_pay_m = "unpaid"
+    elif delivery_type == "dine_in" and raw_pay_m not in ("card", "online"):
+        raw_pay_m = "unpaid"
+    payment_method = raw_pay_m if raw_pay_m in ("cash", "card", "online", "unpaid") else ("unpaid" if delivery_type == "dine_in" else "cash")
+
+    raw_pay_st = str(payload.get("payment_status") or ("pending" if payment_method == "unpaid" else "pending")).strip().lower()
+    payment_status = "pending" if payment_method == "unpaid" else (raw_pay_st if raw_pay_st in ("pending", "paid") else "pending")
+
+    initial_status = str(payload.get("status") or "").strip().lower()
+    if initial_status not in VALID_STATUSES:
+        initial_status = "cooking" if (delivery_type == "dine_in" and source == "kassa") else "new"
+
     return {
         "user_id": int(user_id) if str(user_id or "").isdigit() else None,
         "idempotency_key": idempotency_key[:100] if idempotency_key else None,
         "created_at_utc": now_utc,
         "updated_at_utc": now_utc,
-        "status": "new",
+        "status": initial_status,
         "customer_name": customer_name,
         "phone": phone,
         "delivery_type": delivery_type,
@@ -543,6 +553,100 @@ def save_order_transactional(order_dict: Dict[str, Any]) -> tuple[Dict[str, Any]
         except Exception:
             conn.rollback()
             raise
+
+def append_items_to_order_transactional(order_id: int, new_items: List[Dict[str, Any]], additional_comment: str = "") -> Dict[str, Any]:
+    """Qo'shimcha taomlarni (Do-zakaz) mavjud buyurtmaga tranzaksion qo'shadi."""
+    with get_db_connection() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+            if not row:
+                conn.rollback()
+                raise ValueError("Buyurtma topilmadi / Заказ не найден.")
+
+            existing_items = []
+            try:
+                existing_items = json.loads(row["items_json"] or "[]")
+            except Exception:
+                existing_items = []
+
+            for ni in new_items:
+                existing_items.append(ni)
+
+            new_subtotal = sum(int(it.get("price", 0)) * int(it.get("qty", 1)) for it in existing_items)
+            discount_val = int(row["discount"] or 0)
+            delivery_fee_val = int(row["delivery_fee"] or 0)
+            new_total = max(0, new_subtotal - discount_val) + delivery_fee_val
+
+            now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            items_json = json.dumps(existing_items, ensure_ascii=False)
+            summary_text = ", ".join(f"{i['name']} x{i['qty']}" for i in existing_items)
+
+            old_comment = row["comment"] or ""
+            updated_comment = old_comment
+            if additional_comment:
+                updated_comment = f"{old_comment} | {additional_comment}".strip(" |")
+
+            # Yangi taom qo'shilgach, oshxona statusi yangilanadi (cooking)
+            new_status = "cooking" if row["status"] not in ("completed", "cancelled") else row["status"]
+
+            conn.execute(
+                """
+                UPDATE orders SET
+                    order_data = ?,
+                    items_json = ?,
+                    subtotal = ?,
+                    total = ?,
+                    total_price = ?,
+                    comment = ?,
+                    status = ?,
+                    updated_at_utc = ?
+                WHERE id = ?
+                """,
+                (summary_text, items_json, new_subtotal, new_total, new_total, updated_comment, new_status, now_utc, order_id),
+            )
+            updated_row = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+            conn.commit()
+            return serialize_order_row(updated_row)
+        except Exception:
+            conn.rollback()
+            raise
+
+def pay_and_complete_order_transactional(order_id: int, payment_method: str = "cash", operator: str = "admin") -> Dict[str, Any]:
+    """Chiqishda to'lovni qabul qilib, buyurtmani to'langan va yakunlangan holatga o'tkazadi."""
+    pm_raw = str(payment_method or "cash").strip().lower()
+    if pm_raw in ("click", "payme", "online"):
+        norm_method = "online"
+    elif pm_raw in ("card", "terminal", "uzcard", "humo"):
+        norm_method = "card"
+    else:
+        norm_method = "cash"
+
+    with get_db_connection() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+            if not row:
+                conn.rollback()
+                raise ValueError("Buyurtma topilmadi.")
+            now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            conn.execute(
+                """
+                UPDATE orders SET
+                    status = 'completed',
+                    payment_status = 'paid',
+                    payment_method = ?,
+                    updated_at_utc = ?
+                WHERE id = ?
+                """,
+                (norm_method, now_utc, order_id),
+            )
+            updated_row = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+            conn.commit()
+            return serialize_order_row(updated_row)
+        except Exception:
+            conn.rollback()
+            raise
 # =====================================================================
 # Izoh
 # =====================================================================
@@ -577,16 +681,21 @@ def format_order_telegram_html(order: Dict[str, Any]) -> str:
     dfee = int(order.get("delivery_fee", 0))
     tot = int(order.get("total", 0))
     raw_pm = str(order.get("payment_method") or "cash").lower()
+    pay_st = str(order.get("payment_status") or "pending").lower()
     if raw_pm == "card":
         pay_label = "💳 Karta / Terminal (Карта)"
     elif raw_pm in ("online", "click", "payme"):
         pay_label = "📱 Click / Payme (Онлайн)"
+    elif raw_pm in ("unpaid", "postpaid", "exit", "chiqishda"):
+        pay_label = "⏳ Chiqishda to'lash (Kassada / Пост-оплата)"
     else:
         pay_label = "💵 Naqd pul (Наличные)"
+
+    st_badge = "🟢 To'langan" if pay_st == "paid" else "🟡 To'lanmagan (Chiqishda to'lanadi)"
     lines.append("")
     lines.append(f"💵 <b>Taomlar summasi:</b> {subtot:,} so'm".replace(",", " "))
     lines.append(f"🛵 <b>Yetkazib berish:</b> {dfee:,} so'm".replace(",", " "))
-    lines.append(f"💳 <b>To'lov turi:</b> {pay_label}")
+    lines.append(f"💳 <b>To'lov turi:</b> {pay_label} · <b>{st_badge}</b>")
     lines.append(f"💰 <b>JAMI TO'LOV: {tot:,} so'm</b>".replace(",", " "))
     return chr(10).join(lines)
 async def send_telegram_group_notification(bot_instance: Optional[Bot], order: Dict[str, Any]) -> bool:
@@ -682,16 +791,21 @@ async def send_telegram_customer_receipt(bot_instance: Optional[Bot], order: Dic
     dfee = int(order.get("delivery_fee", 0))
     tot = int(order.get("total", 0))
     raw_pm = str(order.get("payment_method") or "cash").lower()
+    pay_st = str(order.get("payment_status") or "pending").lower()
     if raw_pm == "card":
         pay_label = "💳 Karta / Terminal (Карта)"
     elif raw_pm in ("online", "click", "payme"):
         pay_label = "📱 Click / Payme (Онлайн)"
+    elif raw_pm in ("unpaid", "postpaid", "exit", "chiqishda"):
+        pay_label = "⏳ Chiqishda to'lash (Kassada / Пост-оплата)"
     else:
         pay_label = "💵 Naqd pul (Наличные)"
+
+    st_badge = "🟢 To'langan" if pay_st == "paid" else "🟡 To'lanmagan (Chiqishda to'lanadi)"
     lines.append("")
     lines.append(f"💵 <b>Taomlar summasi:</b> {subtot:,} so'm".replace(",", " "))
     lines.append(f"🛵 <b>Yetkazib berish:</b> {dfee:,} so'm".replace(",", " "))
-    lines.append(f"💳 <b>To'lov turi:</b> {pay_label}")
+    lines.append(f"💳 <b>To'lov turi:</b> {pay_label} · <b>{st_badge}</b>")
     lines.append(f"💰 <b>JAMI TO'LOV: {tot:,} so'm</b>".replace(",", " "))
     lines.append("")
     lines.append("<b>American Caffetteria</b> ni tanlaganingiz uchun tashakkur!")
@@ -966,11 +1080,153 @@ async def api_register_client(request: web.Request) -> web.Response:
         "group_notified": group_sent,
         "message": "Ro'yxatdan o'tish muvaffaqiyatli qabul qilindi!",
     })
+async def handle_order_append_logic(request: web.Request, order_id: int, payload: Dict[str, Any]) -> web.Response:
+    """Mavjud buyurtmaga (stoldagi buyurtmaga) yangi taomlarni qo'shadi (Do-zakaz)."""
+    raw_items = payload.get("items")
+    if not isinstance(raw_items, list) or len(raw_items) == 0:
+        return web.json_response({"ok": False, "error": "Qo'shish uchun taomlar tanlanmagan."}, status=400)
+
+    global MENU_CATALOG
+    if not MENU_CATALOG:
+        MENU_CATALOG = load_menu_catalog()
+
+    with get_db_connection() as conn:
+        stop_rows = conn.execute("SELECT item_id FROM stoplist").fetchall()
+        stopped_ids = {r["item_id"] for r in stop_rows}
+
+    validated_new_items = []
+    for it in raw_items:
+        iid = str(it.get("id") or "").strip()
+        base_id = iid.rsplit("_", 1)[0] if "_" in iid else iid
+        if iid in stopped_ids or base_id in stopped_ids:
+            return web.json_response({"ok": False, "error": f"'{it.get('name', iid)}' taomi stop-listda."}, status=400)
+        qty = max(1, min(99, int(it.get("qty") or it.get("quantity") or 1)))
+        price = int(it.get("price") or 0)
+        cat_dish = MENU_CATALOG.get(iid) or MENU_CATALOG.get(base_id)
+        if cat_dish:
+            name = cat_dish["name"].get("uz") or cat_dish["name"].get("ru") or iid
+            if price <= 0:
+                price = int(cat_dish["price"])
+        else:
+            name = str(it.get("name") or iid)
+        validated_new_items.append({
+            "id": iid,
+            "name": name,
+            "price": price,
+            "qty": qty,
+            "line_total": price * qty,
+            "added_at": datetime.now(timezone.utc).strftime("%H:%M"),
+        })
+
+    try:
+        updated_order = append_items_to_order_transactional(
+            order_id,
+            validated_new_items,
+            additional_comment=str(payload.get("comment") or "").strip(),
+        )
+    except ValueError as ve:
+        return web.json_response({"ok": False, "error": str(ve)}, status=404)
+    except Exception as exc:
+        logger.exception("Append items error: %s", exc)
+        return web.json_response({"ok": False, "error": "Taomlarni qo'shishda xatolik."}, status=500)
+
+    await broadcast_sse_event("order_updated", {"order": updated_order, "new_items": validated_new_items})
+
+    bot_instance = request.app.get("bot")
+    if bot_instance and GROUP_CHAT_ID:
+        tbl_label = updated_order.get("address") or updated_order.get("customer_name") or "Zalda"
+        lines = [
+            f"➕ <b>QO'SHIMCHA BUYURTMA (DO-ZAKAZ)!</b>",
+            f"━━━━━━━━━━━━━━━━━━━━━",
+            f"🪑 <b>Joy / Stol:</b> {html.escape(tbl_label)} ({updated_order.get('order_code')})",
+            f"📋 <b>Yangi qo'shilgan taomlar:</b>",
+        ]
+        for idx, it in enumerate(validated_new_items, 1):
+            lines.append(f"{idx}. {html.escape(it['name'])} × {it['qty']} = <b>{it['line_total']:,} so'm</b>".replace(",", " "))
+        lines.append(f"━━━━━━━━━━━━━━━━━━━━━")
+        lines.append(f"💰 <b>Yangilangan jami hisob: {updated_order['total']:,} so'm</b>".replace(",", " "))
+        lines.append(f"🕒 <b>Vaqt:</b> {datetime.now(timezone.utc).strftime('%H:%M:%S')} UTC")
+        asyncio.create_task(bot_instance.send_message(
+            chat_id=GROUP_CHAT_ID,
+            text=chr(10).join(lines),
+            parse_mode="HTML",
+        ))
+
+    return web.json_response({"ok": True, "order": updated_order, "added_items": validated_new_items})
+
+async def api_order_append(request: web.Request) -> web.Response:
+    order_id = request.match_info.get("id", "")
+    if not order_id.isdigit():
+        return web.json_response({"ok": False, "error": "Noto'g'ri buyurtma ID."}, status=400)
+    try:
+        payload = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "Noto'g'ri JSON."}, status=400)
+    return await handle_order_append_logic(request, int(order_id), payload)
+
+async def api_order_pay(request: web.Request) -> web.Response:
+    order_id = request.match_info.get("id", "")
+    if not order_id.isdigit():
+        return web.json_response({"ok": False, "error": "Noto'g'ri buyurtma ID."}, status=400)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    pay_m = str(body.get("payment_method") or "cash").strip().lower()
+    if pay_m in ("terminal", "humo", "uzcard"):
+        pay_m = "card"
+    elif pay_m in ("click", "payme", "online"):
+        pay_m = "online"
+    else:
+        pay_m = "cash"
+
+    operator = str(body.get("operator") or "admin").strip()
+    try:
+        updated_order = pay_and_complete_order_transactional(int(order_id), payment_method=pay_m, operator=operator)
+    except ValueError as ve:
+        return web.json_response({"ok": False, "error": str(ve)}, status=404)
+
+    await broadcast_sse_event("order_updated", {"order": updated_order})
+
+    bot_instance = request.app.get("bot")
+    group_mid = updated_order.get("group_message_id")
+    if bot_instance and GROUP_CHAT_ID and group_mid:
+        try:
+            status_text = format_order_telegram_html(updated_order) + f"\n\n🏷️ <b>Holati:</b> <b>✅ Yakunlandi (To'lov qabul qilindi: {pay_m.upper()})</b>"
+            await bot_instance.edit_message_text(
+                chat_id=GROUP_CHAT_ID,
+                message_id=int(group_mid),
+                text=status_text,
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+
+    return web.json_response({"ok": True, "order": updated_order})
+
 async def api_create_order(request: web.Request) -> web.Response:
     try:
         payload = await request.json()
     except Exception:
         return web.json_response({"ok": False, "error": "Noto'g'ri JSON so'rov / Некорректный запрос."}, status=400)
+
+    # 1. Agar mavjud stol buyurtmasiga qo'shimcha taom qo'shish so'ralgan bo'lsa
+    append_order_id = payload.get("append_to_order_id")
+    if not append_order_id and payload.get("delivery_type") == "dine_in" and payload.get("append_if_active"):
+        tbl_addr = str(payload.get("address") or payload.get("customer_name") or "").strip()
+        if tbl_addr:
+            with get_db_connection() as conn:
+                cur = conn.execute(
+                    "SELECT id FROM orders WHERE delivery_type = 'dine_in' AND status NOT IN ('completed', 'cancelled') AND (address = ? OR customer_name = ?) ORDER BY id DESC LIMIT 1",
+                    (tbl_addr, tbl_addr),
+                )
+                active_row = cur.fetchone()
+                if active_row:
+                    append_order_id = active_row["id"]
+
+    if append_order_id and str(append_order_id).isdigit():
+        return await handle_order_append_logic(request, int(append_order_id), payload)
+
     try:
         order_dict = validate_and_build_order(payload, default_source="web")
         saved_order, is_new = save_order_transactional(order_dict)
@@ -1171,7 +1427,10 @@ async def api_admin_update_status(request: web.Request) -> web.Response:
     except Exception:
         return web.json_response({"ok": False, "error": "Noto'g'ri JSON / Некорректный JSON."}, status=400)
     new_status = str(body.get("status") or "").strip().lower()
-    if new_status not in VALID_STATUSES:
+    new_pay_st = str(body.get("payment_status") or "").strip().lower()
+    new_pay_m = str(body.get("payment_method") or "").strip().lower()
+
+    if new_status and new_status not in VALID_STATUSES:
         return web.json_response({"ok": False, "error": "Noto'g'ri buyurtma holati / Недопустимый статус."}, status=400)
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     with get_db_connection() as conn:
@@ -1180,22 +1439,49 @@ async def api_admin_update_status(request: web.Request) -> web.Response:
         if not row:
             conn.rollback()
             return web.json_response({"ok": False, "error": "Заказ не найден."}, status=404)
-        
+
         current_status = str(row["status"] or "new").lower()
-        if current_status == new_status:
+        if not new_status and not new_pay_st and not new_pay_m:
             conn.rollback()
             return web.json_response({"ok": True, "order": serialize_order_row(row)})
-        
-        if current_status in ("completed", "cancelled"):
+
+        if current_status in ("completed", "cancelled") and new_pay_st != "paid":
             conn.rollback()
             return web.json_response(
                 {"ok": False, "error": f"Buyurtma allaqachon yakunlangan ({current_status}). Holatni o'zgartirib bo'lmaydi."},
                 status=400,
             )
 
+        set_clauses = ["updated_at_utc = ?"]
+        set_params = [now_utc]
+
+        target_status = new_status
+        if new_pay_st == "paid" and not target_status:
+            target_status = "completed"
+
+        if target_status and target_status in VALID_STATUSES:
+            set_clauses.append("status = ?")
+            set_params.append(target_status)
+
+        if new_pay_st in ("pending", "paid"):
+            set_clauses.append("payment_status = ?")
+            set_params.append(new_pay_st)
+
+        if new_pay_m:
+            if new_pay_m in ("terminal", "humo", "uzcard"):
+                new_pay_m = "card"
+            elif new_pay_m in ("click", "payme", "online"):
+                new_pay_m = "online"
+            elif new_pay_m in ("unpaid", "postpaid", "exit", "chiqishda"):
+                new_pay_m = "unpaid"
+            if new_pay_m in ("cash", "card", "online", "unpaid"):
+                set_clauses.append("payment_method = ?")
+                set_params.append(new_pay_m)
+
+        set_params.append(int(order_id))
         conn.execute(
-            "UPDATE orders SET status = ?, updated_at_utc = ? WHERE id = ?",
-            (new_status, now_utc, int(order_id)),
+            f"UPDATE orders SET {', '.join(set_clauses)} WHERE id = ?",
+            tuple(set_params),
         )
         updated_row = conn.execute("SELECT * FROM orders WHERE id = ?", (int(order_id),)).fetchone()
         conn.commit()
@@ -1263,6 +1549,8 @@ async def api_admin_stats(request: web.Request) -> web.Response:
         cash_revenue = 0
         card_revenue = 0
         online_revenue = 0
+        unpaid_open_tables_revenue = 0
+        unpaid_open_tables_count = 0
         valid_orders = 0
         shift_orders_count = 0
         status_counts = {"new": 0, "preparing": 0, "cooking": 0, "delivering": 0, "completed": 0, "cancelled": 0}
@@ -1278,17 +1566,23 @@ async def api_admin_stats(request: web.Request) -> web.Response:
             status_counts[norm_st] = status_counts.get(norm_st, 0) + 1
             tot = int(r["total"] if r["total"] else (r["total_price"] or 0))
             if st != "cancelled":
-                total_revenue += tot
-                valid_orders += 1
                 row_keys = set(r.keys())
+                pay_st = str(r["payment_status"] or "pending").lower() if "payment_status" in row_keys else "pending"
                 pay_m = str(r["payment_method"] or "cash").lower() if "payment_method" in row_keys else "cash"
                 comm = str(r["comment"] or "").lower()
-                if pay_m == "card" or any(k in comm for k in ("karta", "terminal", "card", "humo", "uzcard")):
-                    card_revenue += tot
-                elif pay_m in ("online", "click", "payme") or any(k in comm for k in ("click", "payme", "online")):
-                    online_revenue += tot
+
+                if pay_st != "paid" and (pay_m == "unpaid" or r["delivery_type"] == "dine_in") and st != "completed":
+                    unpaid_open_tables_revenue += tot
+                    unpaid_open_tables_count += 1
                 else:
-                    cash_revenue += tot
+                    total_revenue += tot
+                    valid_orders += 1
+                    if pay_m in ("card", "terminal", "humo", "uzcard") or any(k in comm for k in ("karta", "terminal", "card", "humo", "uzcard")):
+                        card_revenue += tot
+                    elif pay_m in ("online", "click", "payme") or any(k in comm for k in ("click", "payme", "online")):
+                        online_revenue += tot
+                    else:
+                        cash_revenue += tot
                 try:
                     items = json.loads(r["items_json"] or "[]")
                     for it in items:
@@ -1316,6 +1610,8 @@ async def api_admin_stats(request: web.Request) -> web.Response:
             "cash_revenue": cash_revenue,
             "card_revenue": card_revenue,
             "online_revenue": online_revenue,
+            "unpaid_open_tables_revenue": unpaid_open_tables_revenue,
+            "unpaid_open_tables_count": unpaid_open_tables_count,
             "cash_in_total": cash_in_total,
             "cash_out_total": cash_out_total,
             "cash_in_drawer": cash_in_drawer,
@@ -1893,6 +2189,10 @@ async def main():
     app.router.add_get("/api/orders", api_admin_list_orders)
     app.router.add_patch("/api/orders/{id}", api_admin_update_status)
     app.router.add_patch("/api/orders/{id}/status", api_admin_update_status)
+    app.router.add_post("/api/orders/{id}/append", api_order_append)
+    app.router.add_post("/api/orders/{id}/pay", api_order_pay)
+    app.router.add_post("/api/admin/orders/{id}/append", api_order_append)
+    app.router.add_post("/api/admin/orders/{id}/pay", api_order_pay)
     app.router.add_post("/api/register", api_register_client)
     app.router.add_post("/api/reservations", api_create_reservation)
     app.router.add_get("/api/reservations", api_list_reservations)

@@ -294,6 +294,24 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
   }
 
   if (pathname === '/api/orders' && req.method === 'POST') {
+    const appendId = body.append_to_order_id;
+    if (appendId) {
+      let target = mockOrders.find((o) => o.id === Number(appendId));
+      if (target) {
+        const newItems = Array.isArray(body.items) ? body.items : [];
+        target.items = [...target.items, ...newItems];
+        target.subtotal = target.items.reduce((s, it) => s + Number(it.price || 0) * Number(it.qty || 1), 0);
+        target.total = target.subtotal;
+        target.total_amount = target.subtotal;
+        target.status = 'cooking';
+        target.updated_at_utc = new Date().toISOString();
+        broadcastSSE('order_updated', { order: target, new_items: newItems });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, order: target, duplicate: false }));
+        return;
+      }
+    }
+
     const id = nextOrderId++;
     const items = Array.isArray(body.items) ? body.items : [];
     const subtotal = items.reduce((s, it) => s + Number(it.price || 0) * Number(it.qty || 1), 0) || Number(body.subtotal || body.totalAmount || 50000);
@@ -306,7 +324,18 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
     const total = afterDisc + delivFee;
     const nowUtc = new Date().toISOString();
     const rawPayMethod = String(body.payment_method || 'cash').trim().toLowerCase();
-    const paymentMethod = (rawPayMethod === 'click' || rawPayMethod === 'payme' || rawPayMethod === 'online') ? 'online' : (['card', 'terminal', 'humo', 'uzcard'].includes(rawPayMethod) ? 'card' : 'cash');
+    let paymentMethod = 'cash';
+    if (rawPayMethod === 'click' || rawPayMethod === 'payme' || rawPayMethod === 'online') {
+      paymentMethod = 'online';
+    } else if (['card', 'terminal', 'humo', 'uzcard'].includes(rawPayMethod)) {
+      paymentMethod = 'card';
+    } else if (['unpaid', 'postpaid', 'exit', 'chiqishda'].includes(rawPayMethod) || (delivType === 'dine_in' && rawPayMethod !== 'cash')) {
+      paymentMethod = 'unpaid';
+    } else if (delivType === 'dine_in') {
+      paymentMethod = rawPayMethod === 'cash' && body.source === 'kassa' && body.payment_status === 'paid' ? 'cash' : 'unpaid';
+    }
+
+    const payStatus = (paymentMethod === 'unpaid') ? 'pending' : (String(body.payment_status || 'pending').toLowerCase());
 
     const order = {
       id,
@@ -318,6 +347,7 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       address: body.address || '',
       comment: body.comment || '',
       payment_method: paymentMethod,
+      payment_status: payStatus,
       source: body.source || 'web',
       items,
       subtotal,
@@ -326,7 +356,7 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       delivery_fee: delivFee,
       total,
       total_amount: total,
-      status: 'new',
+      status: body.status || (delivType === 'dine_in' && body.source === 'kassa' ? 'cooking' : 'new'),
       created_at_utc: nowUtc,
       updated_at_utc: nowUtc,
     };
@@ -335,6 +365,48 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
     broadcastSSE('new_order', { order });
     res.writeHead(201, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, order }));
+    return;
+  }
+
+  const orderAppendMatch = pathname.match(/^\/api\/(?:admin\/)?orders\/(\d+)\/append$/);
+  if (orderAppendMatch && req.method === 'POST') {
+    const ordId = parseInt(orderAppendMatch[1], 10);
+    let target = mockOrders.find((o) => o.id === ordId);
+    if (!target) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Buyurtma topilmadi' }));
+      return;
+    }
+    const newItems = Array.isArray(body.items) ? body.items : [];
+    target.items = [...target.items, ...newItems];
+    target.subtotal = target.items.reduce((s, it) => s + Number(it.price || 0) * Number(it.qty || 1), 0);
+    target.total = target.subtotal;
+    target.total_amount = target.subtotal;
+    target.status = 'cooking';
+    target.updated_at_utc = new Date().toISOString();
+    broadcastSSE('order_updated', { order: target, new_items: newItems });
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, order: target, added_items: newItems }));
+    return;
+  }
+
+  const orderPayMatch = pathname.match(/^\/api\/(?:admin\/)?orders\/(\d+)\/pay$/);
+  if (orderPayMatch && req.method === 'POST') {
+    const ordId = parseInt(orderPayMatch[1], 10);
+    let target = mockOrders.find((o) => o.id === ordId);
+    if (!target) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Buyurtma topilmadi' }));
+      return;
+    }
+    const payM = String(body.payment_method || 'cash').toLowerCase();
+    target.payment_status = 'paid';
+    target.payment_method = ['card', 'terminal', 'humo'].includes(payM) ? 'card' : (['online', 'click', 'payme'].includes(payM) ? 'online' : 'cash');
+    target.status = 'completed';
+    target.updated_at_utc = new Date().toISOString();
+    broadcastSSE('order_updated', { order: target });
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, order: target }));
     return;
   }
 
@@ -357,7 +429,6 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       return;
     }
     const ordId = parseInt(orderStatusMatch[1], 10);
-    const newStatus = String(body.status || 'cooking').toLowerCase();
     let target = mockOrders.find((o) => o.id === ordId);
     if (!target) {
       target = {
@@ -370,14 +441,22 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
         subtotal: 49000,
         total: 49000,
         total_amount: 49000,
-        status: newStatus,
+        status: body.status || 'cooking',
         created_at_utc: new Date().toISOString(),
       };
       mockOrders.unshift(target);
-    } else {
-      target.status = newStatus;
-      target.updated_at_utc = new Date().toISOString();
     }
+    if (body.payment_status) target.payment_status = String(body.payment_status).toLowerCase();
+    if (body.payment_method) {
+      const pm = String(body.payment_method).toLowerCase();
+      target.payment_method = ['card', 'terminal', 'humo'].includes(pm) ? 'card' : (['online', 'click', 'payme'].includes(pm) ? 'online' : (pm === 'unpaid' ? 'unpaid' : 'cash'));
+    }
+    if (body.status) {
+      target.status = String(body.status).toLowerCase();
+    } else if (body.payment_status === 'paid') {
+      target.status = 'completed';
+    }
+    target.updated_at_utc = new Date().toISOString();
     broadcastSSE('order_updated', { order: target });
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, order: target }));

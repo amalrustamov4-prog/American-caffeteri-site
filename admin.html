@@ -202,6 +202,22 @@
             <input type="text" id="pos-cust-name" class="pos-cust-input" placeholder="Mijoz ismi / 1-Stol" value="1-Stol" />
             <input type="tel" id="pos-cust-phone" class="pos-cust-input" placeholder="+998 90 ..." value="" />
           </div>
+          <!-- TABLE QUICK SELECTOR (FOR DINE-IN) -->
+          <div id="pos-table-select-wrap" style="margin-top:6px;">
+            <select id="pos-table-select" class="input-styled" style="padding:6px 10px; font-weight:800; font-size:13px; width:100%;">
+              <option value="1-Stol">🪑 1-Stol (4 o'rinli)</option>
+              <option value="2-Stol">🪑 2-Stol (4 o'rinli)</option>
+              <option value="3-Stol">🪑 3-Stol (4 o'rinli)</option>
+              <option value="4-Stol">🪑 4-Stol (6 o'rinli)</option>
+              <option value="5-Stol">🪑 5-Stol (4 o'rinli)</option>
+              <option value="6-Stol">🪑 6-Stol (6 o'rinli)</option>
+              <option value="7-Stol">🪑 7-Stol (4 o'rinli)</option>
+              <option value="8-Stol">🪑 8-Stol (8 o'rinli)</option>
+              <option value="VIP Xona">👑 VIP Xona (10 o'rinli)</option>
+            </select>
+          </div>
+          <!-- TABLE LIVE STATUS BANNER -->
+          <div id="pos-table-status-banner" style="display:none; margin-top:6px; padding:6px 10px; border-radius:6px; font-size:12px; font-weight:700; background:rgba(239,68,68,0.12); border:1px solid #ef4444; color:#ef4444;"></div>
           <input type="text" id="pos-cust-addr" class="pos-cust-input" placeholder="Yetkazib berish manzili..." style="display:none;" />
         </div>
 
@@ -225,6 +241,13 @@
             <span id="pos-total-val">0 so'm</span>
           </div>
 
+          <!-- PRIMARY ACTION FOR DINE-IN: OSHXONAGA UZATISH (CHIQISHDA TO'LASH) -->
+          <button id="pos-kitchen-send-btn" type="button" class="pos-btn-kitchen" style="display:flex; align-items:center; justify-content:center; gap:8px; width:100%; padding:13px; background:#10b981; color:#fff; border:2px solid var(--ink); border-radius:10px; font-size:14.5px; font-weight:800; cursor:pointer; margin-bottom:8px; box-shadow:2px 2px 0 var(--ink);" disabled>
+            <i class="ti ti-chef-hat" style="font-size:18px;"></i>
+            <span id="txt-btn-kitchen">Oshxonaga uzatish (Chiqishda to'lash)</span>
+          </button>
+
+          <!-- SECONDARY ACTION / INSTANT PAYMENT -->
           <button id="pos-pay-btn" type="button" class="pos-btn-pay" disabled>
             <i class="ti ti-cash"></i> <span id="txt-btn-pay">To'lov va Chek chiqarish</span>
           </button>

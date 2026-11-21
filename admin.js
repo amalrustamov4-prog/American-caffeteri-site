@@ -44,6 +44,8 @@
     posOrderType: "dine_in", // "dine_in" | "pickup" | "delivery"
     selectedSizes: {}, // { [itemId]: sizeKey }
     posCart: [], // [{ id, name, price, qty, image }]
+    activeTableAppendOrderId: null, // order id to append items to (Do-zakaz)
+    payingOrder: null, // order being paid upon exit
 
     // Payment Modal State
     payMethod: "cash", // "cash" | "card" | "click"
@@ -428,9 +430,19 @@
       });
     });
 
-    // POS Pay Trigger
-    document.getElementById("pos-pay-btn")?.addEventListener("click", openPaymentModal);
+    // POS Pay & Kitchen Send Triggers
+    document.getElementById("pos-pay-btn")?.addEventListener("click", () => openPaymentModal(null));
+    document.getElementById("pos-kitchen-send-btn")?.addEventListener("click", executeSendToKitchen);
     document.getElementById("btn-close-pay-modal")?.addEventListener("click", closePaymentModal);
+
+    const posTableSelect = document.getElementById("pos-table-select");
+    if (posTableSelect) {
+      posTableSelect.addEventListener("change", () => {
+        const nameInput = document.getElementById("pos-cust-name");
+        if (nameInput) nameInput.value = posTableSelect.value;
+        updatePOSTableBanner();
+      });
+    }
 
     // Payment Methods
     document.querySelectorAll(".pay-method-btn").forEach((btn) => {
@@ -452,7 +464,7 @@
     document.querySelectorAll(".quick-bill-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         const amt = btn.dataset.amount;
-        const total = getPOSTotal();
+        const total = getActivePayingTotal();
         if (amt === "exact") {
           cashInput.value = total;
         } else {
@@ -727,7 +739,10 @@
     const activeBtn = document.getElementById("tab-btn-" + tab);
     if (activeBtn) activeBtn.classList.add("active");
 
-    if (tab === "pos") renderPOSMenu();
+    if (tab === "pos") {
+      renderPOSMenu();
+      updatePOSTableBanner();
+    }
     else if (tab === "orders") renderLiveOrders();
     else if (tab === "tables") {
       fetchReservations();
@@ -908,6 +923,7 @@
     renderLiveOrders();
     renderTablesAndReservations();
     updateKPIs();
+    updatePOSTableBanner();
   }
 
   function handleIncomingOrder(order) {
@@ -920,6 +936,7 @@
       renderLiveOrders();
       renderTablesAndReservations();
       updateKPIs();
+      updatePOSTableBanner();
       if (state.autoPrint) {
         setTimeout(() => {
           printOrderReceipt(order);
@@ -939,6 +956,7 @@
     renderLiveOrders();
     renderTablesAndReservations();
     updateKPIs();
+    updatePOSTableBanner();
   }
 
   function updateKPIs() {
@@ -1225,22 +1243,42 @@
     const addrInput = document.getElementById("pos-cust-addr");
     const nameInput = document.getElementById("pos-cust-name");
     const delivFeeRow = document.getElementById("pos-deliv-fee-row");
+    const tableSelectWrap = document.getElementById("pos-table-select-wrap");
+    const kitchenBtn = document.getElementById("pos-kitchen-send-btn");
+    const payBtn = document.getElementById("pos-pay-btn");
 
     if (state.posOrderType === "delivery") {
-      addrInput.style.display = "block";
-      nameInput.placeholder = t("cust_name_placeholder");
-      if (nameInput.value.includes("Stol")) nameInput.value = "";
-      delivFeeRow.style.display = "flex";
+      if (addrInput) addrInput.style.display = "block";
+      if (tableSelectWrap) tableSelectWrap.style.display = "none";
+      if (kitchenBtn) kitchenBtn.style.display = "none";
+      if (payBtn) payBtn.style.display = "flex";
+      if (nameInput) {
+        nameInput.placeholder = t("cust_name_placeholder");
+        if (nameInput.value.includes("Stol")) nameInput.value = "";
+      }
+      if (delivFeeRow) delivFeeRow.style.display = "flex";
     } else if (state.posOrderType === "pickup") {
-      addrInput.style.display = "none";
-      nameInput.placeholder = t("cust_name_placeholder");
-      if (nameInput.value.includes("Stol")) nameInput.value = "";
-      delivFeeRow.style.display = "none";
+      if (addrInput) addrInput.style.display = "none";
+      if (tableSelectWrap) tableSelectWrap.style.display = "none";
+      if (kitchenBtn) kitchenBtn.style.display = "none";
+      if (payBtn) payBtn.style.display = "flex";
+      if (nameInput) {
+        nameInput.placeholder = t("cust_name_placeholder");
+        if (nameInput.value.includes("Stol")) nameInput.value = "";
+      }
+      if (delivFeeRow) delivFeeRow.style.display = "none";
     } else {
-      addrInput.style.display = "none";
-      nameInput.placeholder = t("table_placeholder");
-      if (!nameInput.value) nameInput.value = "1-Stol";
-      delivFeeRow.style.display = "none";
+      if (addrInput) addrInput.style.display = "none";
+      if (tableSelectWrap) tableSelectWrap.style.display = "block";
+      if (kitchenBtn) kitchenBtn.style.display = "flex";
+      if (payBtn) payBtn.style.display = "flex";
+      const tableSelect = document.getElementById("pos-table-select");
+      if (nameInput) {
+        nameInput.placeholder = t("table_placeholder");
+        nameInput.value = tableSelect ? tableSelect.value : "1-Stol";
+      }
+      if (delivFeeRow) delivFeeRow.style.display = "none";
+      updatePOSTableBanner();
     }
     renderPOSTicket();
   }
@@ -1260,6 +1298,64 @@
     return getPOSSubtotal() + getPOSDeliveryFee();
   }
 
+  function getActivePayingTotal() {
+    if (state.payingOrder) return getOrderTotal(state.payingOrder);
+    return getPOSTotal();
+  }
+
+  function updatePOSTableBanner() {
+    const tableSelect = document.getElementById("pos-table-select");
+    const banner = document.getElementById("pos-table-status-banner");
+    const kitchenBtnTxt = document.getElementById("txt-btn-kitchen");
+    if (!tableSelect || !banner) return;
+
+    if (state.posOrderType !== "dine_in") {
+      banner.style.display = "none";
+      return;
+    }
+
+    const selectedTable = tableSelect.value;
+    const activeOrder = state.orders.find(
+      (o) =>
+        o.delivery_type === "dine_in" &&
+        normalizeStatus(o.status) !== "completed" &&
+        normalizeStatus(o.status) !== "cancelled" &&
+        (String(o.customer_name || "").toLowerCase().includes(selectedTable.toLowerCase()) ||
+          String(o.address || "").toLowerCase().includes(selectedTable.toLowerCase()))
+    );
+
+    if (activeOrder) {
+      state.activeTableAppendOrderId = activeOrder.id;
+      banner.style.display = "block";
+      banner.style.background = "rgba(245, 158, 11, 0.15)";
+      banner.style.borderColor = "#f59e0b";
+      banner.style.color = "#b45309";
+      const ordTot = getOrderTotal(activeOrder).toLocaleString("ru-RU");
+      banner.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span>🔴 <b>${selectedTable}</b> band · Buyurtma: <b>${getOrderCode(activeOrder)}</b></span>
+          <span style="font-weight:900;">${ordTot} so'm</span>
+        </div>
+        <div style="font-size:11px; margin-top:3px; color:#92400e;">
+          ⚡ Yangi taomlar tanlansa, oshxonaga <b>Do-zakaz</b> cheki chiqadi va stol hisobiga qo'shiladi.
+        </div>
+      `;
+      if (kitchenBtnTxt) {
+        kitchenBtnTxt.textContent = "Oshxonaga uzatish (Do-zakaz qo'shish)";
+      }
+    } else {
+      state.activeTableAppendOrderId = null;
+      banner.style.display = "block";
+      banner.style.background = "rgba(16, 185, 129, 0.12)";
+      banner.style.borderColor = "#10b981";
+      banner.style.color = "#047857";
+      banner.innerHTML = `🟢 <b>${selectedTable}</b> bo'sh · Yangi buyurtma oshxonaga yuboriladi, to'lov chiqishda olinadi.`;
+      if (kitchenBtnTxt) {
+        kitchenBtnTxt.textContent = "Oshxonaga uzatish (Chiqishda to'lash)";
+      }
+    }
+  }
+
   function renderPOSTicket() {
     const container = document.getElementById("pos-ticket-items");
     if (!container) return;
@@ -1276,6 +1372,8 @@
       document.getElementById("pos-deliv-val").textContent = "0 so'm";
       document.getElementById("pos-total-val").textContent = "0 so'm";
       document.getElementById("pos-pay-btn").disabled = true;
+      const kitchenBtn = document.getElementById("pos-kitchen-send-btn");
+      if (kitchenBtn) kitchenBtn.disabled = true;
 
       // Reset Mobile Elements
       const badgeMob = document.getElementById("pos-mob-ticket-badge");
@@ -1324,6 +1422,8 @@
       fee === 0 ? "Bepul (0 so'm)" : fee.toLocaleString("ru-RU") + " so'm";
     document.getElementById("pos-total-val").textContent = total.toLocaleString("ru-RU") + " so'm";
     document.getElementById("pos-pay-btn").disabled = false;
+    const kitchenBtn = document.getElementById("pos-kitchen-send-btn");
+    if (kitchenBtn) kitchenBtn.disabled = false;
 
     // Update Mobile POS Elements
     const totalQty = state.posCart.reduce((sum, item) => sum + item.qty, 0);
@@ -1348,66 +1448,264 @@
   }
 
   // ==================== PAYMENT & RECEIPT PRINT ====================
-  function openPaymentModal() {
-    if (state.posCart.length === 0) return;
-    const total = getPOSTotal();
+  function openPaymentModal(targetOrder = null) {
+    if (targetOrder) {
+      state.payingOrder = targetOrder;
+    } else {
+      state.payingOrder = null;
+      if (state.posCart.length === 0) return;
+    }
+
+    const total = getActivePayingTotal();
+    const modalTitle = document.querySelector("#payment-modal h3");
+    if (modalTitle) {
+      modalTitle.textContent = state.payingOrder
+        ? `To'lov: ${getOrderCode(state.payingOrder)} (${state.payingOrder.customer_name || state.payingOrder.address || "Stol"})`
+        : "To'lovni qabul qilish";
+    }
+
     document.getElementById("modal-pay-total").textContent = total.toLocaleString("ru-RU") + " so'm";
 
     const cashInput = document.getElementById("input-cash-given");
-    cashInput.value = total;
+    if (cashInput) {
+      cashInput.value = total;
+    }
     calculateChange();
 
     document.getElementById("payment-modal").style.display = "flex";
   }
 
   function closePaymentModal() {
-    document.getElementById("payment-modal").style.display = "none";
+    state.payingOrder = null;
+    const modal = document.getElementById("payment-modal");
+    if (modal) modal.style.display = "none";
   }
 
   function calculateChange() {
-    const total = getPOSTotal();
+    const total = getActivePayingTotal();
     const given = Number(document.getElementById("input-cash-given").value) || 0;
     const change = Math.max(0, given - total);
     document.getElementById("modal-change-val").textContent = change.toLocaleString("ru-RU") + " so'm";
   }
 
-  async function executePaymentAndPrint() {
-    const custName =
-      document.getElementById("pos-cust-name").value.trim() ||
-      (state.posOrderType === "dine_in" ? "1-Stol" : "Mijoz");
-    const custPhone = document.getElementById("pos-cust-phone").value.trim() || "+998 90 822 01 01";
-    const custAddr = document.getElementById("pos-cust-addr").value.trim();
+  async function executeSendToKitchen() {
+    if (state.posCart.length === 0) {
+      alert("Iltimos, avval taomlarni tanlang!");
+      return;
+    }
+
+    const tableSelect = document.getElementById("pos-table-select");
+    const tableName = tableSelect ? tableSelect.value : (document.getElementById("pos-cust-name")?.value.trim() || "1-Stol");
+    const custPhone = document.getElementById("pos-cust-phone")?.value.trim() || "+998 90 822 01 01";
     const subtotal = getPOSSubtotal();
-    const delivFee = getPOSDeliveryFee();
-    const total = subtotal + delivFee;
-    const cashGiven = Number(document.getElementById("input-cash-given").value) || total;
-    const change = Math.max(0, cashGiven - total);
 
-    const orderPayload = {
-      idempotency_key: "pos_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9),
-      customer_name: custName,
-      phone: custPhone,
-      delivery_type: state.posOrderType,
-      address: custAddr || (state.posOrderType === "dine_in" ? custName : "Termiz sh."),
-      comment: `To'lov: ${state.payMethod.toUpperCase()} (Kassa)`,
-      payment_method: (state.payMethod === "click" || state.payMethod === "payme") ? "online" : (state.payMethod || "cash"),
-      payment_status: "paid",
-      source: "kassa",
-      items: state.posCart.map((i) => ({
-        id: i.id,
-        name: i.name,
-        price: i.price,
-        qty: i.qty,
-      })),
-      totalAmount: total,
-      subtotal: subtotal,
-      delivery_fee: delivFee,
-    };
+    const kitchenBtn = document.getElementById("pos-kitchen-send-btn");
+    if (kitchenBtn) kitchenBtn.disabled = true;
 
+    try {
+      const activeOrder = state.activeTableAppendOrderId
+        ? state.orders.find((o) => o.id === state.activeTableAppendOrderId)
+        : state.orders.find(
+            (o) =>
+              o.delivery_type === "dine_in" &&
+              normalizeStatus(o.status) !== "completed" &&
+              normalizeStatus(o.status) !== "cancelled" &&
+              (String(o.customer_name || "").toLowerCase().includes(tableName.toLowerCase()) ||
+                String(o.address || "").toLowerCase().includes(tableName.toLowerCase()))
+          );
+
+      if (activeOrder) {
+        // DO-ZAKAZ (APPEND)
+        const appendPayload = {
+          items: state.posCart.map((i) => ({
+            id: i.id,
+            name: i.name,
+            price: i.price,
+            qty: i.qty,
+          })),
+          comment: "⚡ Qo'shimcha buyurtma (Do-zakaz)",
+        };
+
+        const res = await fetch(getAdminApiUrl(`/api/admin/orders/${activeOrder.id}/append`), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Requested-With": "XMLHttpRequest",
+            ...getAuthHeaders(),
+          },
+          body: JSON.stringify(appendPayload),
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          alert(data.error || "Do-zakazni saqlashda xatolik yuz berdi!");
+          return;
+        }
+
+        const cartSnapshot = [...state.posCart];
+        clearPOSCart();
+
+        printKitchenTicket({
+          id: activeOrder.id,
+          order_code: getOrderCode(activeOrder),
+          delivery_type: "dine_in",
+          customer_name: tableName,
+          items: cartSnapshot,
+          comment: "⚡ QO'SHIMCHA BUYURTMA (DO-ZAKAZ)",
+          created_at_utc: new Date().toISOString(),
+        });
+
+        alert(`✅ ${tableName} hisobiga qo'shimcha taomlar qo'shildi va oshxonaga uzatildi!`);
+        await fetchOrders();
+        await fetchStats();
+        updatePOSTableBanner();
+      } else {
+        // NEW DINE-IN ORDER
+        const orderPayload = {
+          idempotency_key: "pos_dine_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9),
+          customer_name: tableName,
+          phone: custPhone,
+          delivery_type: "dine_in",
+          address: tableName,
+          comment: "Zalda · To'lov chiqishda",
+          payment_method: "unpaid",
+          payment_status: "pending",
+          status: "cooking",
+          source: "kassa",
+          items: state.posCart.map((i) => ({
+            id: i.id,
+            name: i.name,
+            price: i.price,
+            qty: i.qty,
+          })),
+          totalAmount: subtotal,
+          subtotal: subtotal,
+          delivery_fee: 0,
+        };
+
+        const res = await fetch(getAdminApiUrl("/api/orders"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
+          body: JSON.stringify(orderPayload),
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok || !data.order) {
+          alert(data.error || "Buyurtmani saqlashda xatolik yuz berdi!");
+          return;
+        }
+
+        const savedOrder = data.order;
+        clearPOSCart();
+
+        printKitchenTicket(savedOrder);
+
+        alert(`✅ ${tableName} uchun buyurtma ochildi va oshxonaga uzatildi! (To'lov chiqishda)`);
+        await fetchOrders();
+        await fetchStats();
+        updatePOSTableBanner();
+      }
+    } catch (e) {
+      console.warn("Send to kitchen error:", e);
+      alert("Server bilan aloqa uzildi! Qayta urinib ko'ring.");
+    } finally {
+      if (kitchenBtn) kitchenBtn.disabled = false;
+    }
+  }
+
+  async function executePaymentAndPrint() {
     const confirmBtn = document.getElementById("btn-confirm-payment");
     if (confirmBtn) confirmBtn.disabled = true;
 
     try {
+      if (state.payingOrder) {
+        // SETTLING AN EXISTING OPEN ORDER (E.G. DINE-IN AT EXIT)
+        const ord = state.payingOrder;
+        const total = getOrderTotal(ord);
+        const cashGiven = Number(document.getElementById("input-cash-given").value) || total;
+        const change = Math.max(0, cashGiven - total);
+        const payMethod = (state.payMethod === "click" || state.payMethod === "payme") ? "online" : (state.payMethod || "cash");
+
+        const res = await fetch(getAdminApiUrl(`/api/admin/orders/${ord.id}/pay`), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Requested-With": "XMLHttpRequest",
+            ...getAuthHeaders(),
+          },
+          body: JSON.stringify({
+            payment_method: payMethod,
+            operator: state.username || "kassir",
+          }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok || !data.order) {
+          alert(data.error || "To'lovni saqlashda xatolik! Qayta urinib ko'ring.");
+          return;
+        }
+
+        const paidOrder = data.order;
+        closePaymentModal();
+
+        printThermalReceipt({
+          orderId: getOrderCode(paidOrder),
+          orderType: paidOrder.delivery_type || "dine_in",
+          custName: paidOrder.customer_name || "Mijoz",
+          custPhone: paidOrder.phone || "+998 90 ...",
+          custAddr: paidOrder.address || "",
+          items: paidOrder.items || [],
+          subtotal: paidOrder.subtotal || total,
+          discount: paidOrder.discount || 0,
+          delivFee: paidOrder.delivery_fee || 0,
+          total: total,
+          payMethod: state.payMethod,
+          cashGiven: cashGiven,
+          change: change,
+          date: new Date().toLocaleString("ru-RU", { timeZone: "Asia/Tashkent" }),
+        });
+
+        alert(`✅ To'lov muvaffaqiyatli qabul qilindi! Stol bo'shatildi.`);
+        await fetchOrders();
+        await fetchReservations();
+        await fetchStats();
+        updatePOSTableBanner();
+        return;
+      }
+
+      // STANDARD POS CART CHECKOUT
+      const custName =
+        document.getElementById("pos-cust-name").value.trim() ||
+        (state.posOrderType === "dine_in" ? "1-Stol" : "Mijoz");
+      const custPhone = document.getElementById("pos-cust-phone").value.trim() || "+998 90 822 01 01";
+      const custAddr = document.getElementById("pos-cust-addr").value.trim();
+      const subtotal = getPOSSubtotal();
+      const delivFee = getPOSDeliveryFee();
+      const total = subtotal + delivFee;
+      const cashGiven = Number(document.getElementById("input-cash-given").value) || total;
+      const change = Math.max(0, cashGiven - total);
+
+      const orderPayload = {
+        idempotency_key: "pos_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9),
+        customer_name: custName,
+        phone: custPhone,
+        delivery_type: state.posOrderType,
+        address: custAddr || (state.posOrderType === "dine_in" ? custName : "Termiz sh."),
+        comment: `To'lov: ${state.payMethod.toUpperCase()} (Kassa)`,
+        payment_method: (state.payMethod === "click" || state.payMethod === "payme") ? "online" : (state.payMethod || "cash"),
+        payment_status: "paid",
+        source: "kassa",
+        items: state.posCart.map((i) => ({
+          id: i.id,
+          name: i.name,
+          price: i.price,
+          qty: i.qty,
+        })),
+        totalAmount: total,
+        subtotal: subtotal,
+        delivery_fee: delivFee,
+      };
+
       const res = await fetch(getAdminApiUrl("/api/orders"), {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
@@ -1441,8 +1739,9 @@
         date: new Date().toLocaleString("ru-RU", { timeZone: "Asia/Tashkent" }),
       });
 
-      fetchOrders();
-      fetchStats();
+      await fetchOrders();
+      await fetchStats();
+      updatePOSTableBanner();
     } catch (e) {
       console.warn("Kassa order sync error:", e);
       alert("Server bilan aloqa uzildi! Buyurtma saqlanmadi, qayta urinib ko'ring.");
@@ -1638,6 +1937,16 @@
       const ordTotal = getOrderTotal(ord);
       const ordCode = getOrderCode(ord);
 
+      const isUnpaidDineIn =
+        ord.delivery_type === "dine_in" &&
+        (ord.payment_status === "pending" || ord.payment_method === "unpaid") &&
+        st !== "completed" &&
+        st !== "cancelled";
+
+      const payBadge = isUnpaidDineIn
+        ? `<span style="display:inline-block; font-size:11px; padding:2px 6px; border-radius:4px; font-weight:800; background:#fef3c7; color:#d97706; border:1px solid #f59e0b; margin-left:6px;">🟡 Chiqishda to'lanadi</span>`
+        : (ord.payment_status === "paid" ? `<span style="display:inline-block; font-size:11px; padding:2px 6px; border-radius:4px; font-weight:800; background:#d1fae5; color:#065f46; border:1px solid #10b981; margin-left:6px;">🟢 To'langan</span>` : "");
+
       card.innerHTML = `
         <div class="order-card-header">
           <div class="order-num-box">
@@ -1664,11 +1973,22 @@
         </div>
 
         <div class="order-card-total-row">
-          <span style="font-size:13px; color:var(--text-muted);">${(ord.delivery_type || "delivery").toUpperCase()}</span>
+          <div style="display:flex; align-items:center; flex-wrap:wrap; gap:4px;">
+            <span style="font-size:13px; color:var(--text-muted);">${(ord.delivery_type || "delivery").toUpperCase()}</span>
+            ${payBadge}
+          </div>
           <span class="order-total-sum">${ordTotal.toLocaleString("ru-RU")} so'm</span>
         </div>
 
         <div class="order-actions-row">
+          ${isUnpaidDineIn ? `
+            <button type="button" class="btn-action-status btn-pay-exit-ord" data-id="${ord.id}" title="Chiqishda to'lovni qabul qilish" style="background:#10b981; border-color:#059669; color:#fff; font-weight:800; padding:6px 10px; font-size:12px;">
+              💳 Chiqishda to'lov
+            </button>
+            <button type="button" class="btn-action-print btn-print-precheck" data-id="${ord.id}" title="Predchek chiqarish" style="background:rgba(245,158,11,0.2); border-color:rgba(245,158,11,0.5); color:#f59e0b; font-weight:700; padding:6px 10px; font-size:12px;">
+              🧾 Predchek
+            </button>
+          ` : ""}
           ${actionButtons}
           <button type="button" class="btn-action-print btn-print-kitchen" data-id="${ord.id}" title="Oshxona cheki (Без цен)" style="background:rgba(245,158,11,0.2); border-color:rgba(245,158,11,0.5); color:#f59e0b; font-weight:700; padding:6px 10px; font-size:12px;">
             🍳 Oshxona
@@ -1689,6 +2009,16 @@
       card.querySelectorAll(".btn-action-status").forEach((b) => {
         b.addEventListener("click", () => updateOrderStatus(b.dataset.id, b.dataset.st));
       });
+
+      const payExitBtn = card.querySelector(".btn-pay-exit-ord");
+      if (payExitBtn) {
+        payExitBtn.addEventListener("click", () => openPaymentModal(ord));
+      }
+
+      const precheckBtn = card.querySelector(".btn-print-precheck");
+      if (precheckBtn) {
+        precheckBtn.addEventListener("click", () => printPrecheck(ord));
+      }
 
       const kitchenBtn = card.querySelector(".btn-print-kitchen");
       if (kitchenBtn) {
@@ -1852,6 +2182,81 @@
     }, 150);
   }
 
+  function printPrecheck(ord) {
+    if (!ord) return;
+    const area = document.getElementById("thermal-receipt-print-area");
+    if (!area) return;
+
+    const total = getOrderTotal(ord);
+    const items = Array.isArray(ord.items)
+      ? ord.items
+      : [{ name: ord.items_summary || "Buyurtma", price: total, qty: 1 }];
+
+    let itemsHtml = "";
+    items.forEach((it, idx) => {
+      const itemName = typeof it.name === "object" ? getDishName(it) : (it.name || "Taom");
+      const qty = Number(it.qty || 1);
+      const price = Number(it.price || 0);
+      const lineTot = price > 0 ? (price * qty) : 0;
+      itemsHtml += `
+        <tr>
+          <td style="padding: 2px 0;">${idx + 1}. ${escapeHtml(itemName)}</td>
+          <td style="text-align:center;">x${qty}</td>
+          <td style="text-align:right;">${lineTot > 0 ? lineTot.toLocaleString("ru-RU") : "-"}</td>
+        </tr>
+      `;
+    });
+
+    const dateStr = ord.created_at_utc
+      ? new Date(ord.created_at_utc).toLocaleString("ru-RU", { timeZone: "Asia/Tashkent" })
+      : new Date().toLocaleString("ru-RU", { timeZone: "Asia/Tashkent" });
+
+    const tableName = escapeHtml(ord.customer_name || ord.address || "Stol");
+
+    area.innerHTML = `
+      <div style="text-align: center; border-bottom: 2px dashed #000; padding-bottom: 6px; margin-bottom: 6px;">
+        <h2 style="margin: 0; font-size: 18px; font-weight: 900; letter-spacing: 1px;">PREDCHEK / PREDCHECK</h2>
+        <div style="font-size: 13px; font-weight: 800;">American Caffetteria Termiz</div>
+        <div style="font-size: 11px; font-weight: 700; color: #555;">(Bu to'lov cheki emas / Chiqishda to'lanadi)</div>
+      </div>
+
+      <div style="font-size: 12px; margin-bottom: 6px; line-height: 1.4;">
+        <div style="font-size: 16px; font-weight: 900;"><b>Stol:</b> ${tableName}</div>
+        <div><b>Buyurtma kodi:</b> ${escapeHtml(getOrderCode(ord))}</div>
+        <div><b>Vaqt:</b> ${escapeHtml(dateStr)}</div>
+      </div>
+
+      <table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 6px; border-top: 1px dashed #000; border-bottom: 1px dashed #000;">
+        <thead>
+          <tr style="border-bottom: 1px dotted #000;">
+            <th style="text-align:left; padding: 3px 0;">Taom</th>
+            <th style="text-align:center;">Soni</th>
+            <th style="text-align:right;">Summa</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${itemsHtml}
+        </tbody>
+      </table>
+
+      <div style="font-size: 13px; margin-bottom: 6px;">
+        <div style="display:flex; justify-content:space-between; font-size: 16px; font-weight: 900; border-top: 2px solid #000; padding-top: 4px; margin-top: 4px;">
+          <span>TO'LANADIGAN JAMI:</span>
+          <span>${total.toLocaleString("ru-RU")} UZS</span>
+        </div>
+      </div>
+
+      <div style="text-align:center; border: 2px dashed #000; padding: 6px; border-radius: 4px; margin-top: 8px; font-size: 11.5px; font-weight: 800; background:#f9fafb;">
+        ☕ To'lov kafedan chiqishda kassaga to'lanadi (Naqd, Karta yoki Click).<br/>
+        Xizmatingizdan mamnunmiz!
+      </div>
+    `;
+
+    setTimeout(() => {
+      window.print();
+    }, 150);
+  }
+
   async function updateOrderStatus(id, newStatus) {
     try {
       const res = await fetch(getAdminApiUrl(`/api/admin/orders/${id}/status`), {
@@ -1928,39 +2333,92 @@
             String(o.address || "").toLowerCase().includes(tbl.name.toLowerCase()))
       );
 
-      let stClass = "table-free";
-      let stBadge = `<span style="color:#10b981; font-size:12px; font-weight:800;">🟢 Bo'sh</span>`;
-      let subInfo = `${tbl.hall} · ${tbl.seats} o'rinli`;
+      const card = document.createElement("div");
 
       if (activeOrder) {
-        stClass = "table-busy";
-        stBadge = `<span style="color:#ef4444; font-size:12px; font-weight:800;">🔴 Band (${getOrderCode(activeOrder)})</span>`;
-        subInfo = `Joriy hisob: ${getOrderTotal(activeOrder).toLocaleString("ru-RU")} so'm`;
-      }
+        const ordCode = getOrderCode(activeOrder);
+        const ordTot = getOrderTotal(activeOrder);
+        const itemCount = Array.isArray(activeOrder.items)
+          ? activeOrder.items.reduce((s, it) => s + (it.qty || 1), 0)
+          : 1;
 
-      const card = document.createElement("div");
-      card.className = `table-map-card ${stClass}`;
-      card.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <strong style="font-size:16px;">🪑 ${tbl.name}</strong>
-          ${stBadge}
-        </div>
-        <div style="font-size:12.5px; color:var(--text-muted);">${subInfo}</div>
-        <button type="button" class="header-btn btn-order-for-table" style="width:100%; justify-content:center; background:rgba(33,79,252,0.2); border-color:rgba(33,79,252,0.5); color:#fff; font-weight:700;">
-          + Zakaz urish
-        </button>
-      `;
+        card.className = "table-map-card table-busy";
+        card.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <strong style="font-size:16px;">🪑 ${escapeHtml(tbl.name)}</strong>
+            <span style="color:#ef4444; font-size:12px; font-weight:800;">🔴 Band (${ordCode})</span>
+          </div>
+          <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px;">${tbl.hall} · ${tbl.seats} o'rinli</div>
+          <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.06); padding:6px 8px; border-radius:6px; margin-bottom:6px;">
+            <span style="font-size:12px; font-weight:700;">Jami (${itemCount} taom):</span>
+            <strong style="font-size:14px; color:#10b981;">${ordTot.toLocaleString("ru-RU")} so'm</strong>
+          </div>
+          <div style="display:inline-block; font-size:11px; padding:2px 6px; border-radius:4px; font-weight:700; background:#fef3c7; color:#d97706; border:1px solid #f59e0b; margin-bottom:8px;">
+            🟡 Chiqishda to'lanadi
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
+            <button type="button" class="header-btn btn-add-food-to-table" style="justify-content:center; background:rgba(33,79,252,0.2); border-color:rgba(33,79,252,0.5); color:#fff; font-weight:700; font-size:12px; padding:6px 4px;">
+              ➕ Taom qo'shish
+            </button>
+            <button type="button" class="header-btn btn-precheck-table" style="justify-content:center; background:rgba(245,158,11,0.2); border-color:rgba(245,158,11,0.5); color:#f59e0b; font-weight:700; font-size:12px; padding:6px 4px;">
+              🧾 Predchek
+            </button>
+          </div>
+          <button type="button" class="header-btn btn-settle-table" style="width:100%; justify-content:center; background:#10b981; border-color:#059669; color:#fff; font-weight:800; font-size:13px; padding:8px 4px;">
+            💳 Chiqishda to'lash
+          </button>
+        `;
 
-      card.querySelector(".btn-order-for-table").addEventListener("click", () => {
-        switchTab("pos");
-        state.posOrderType = "dine_in";
-        document.querySelectorAll(".order-type-btn").forEach((b) => {
-          b.classList.toggle("active", b.dataset.type === "dine_in");
+        card.querySelector(".btn-add-food-to-table").addEventListener("click", () => {
+          switchTab("pos");
+          state.posOrderType = "dine_in";
+          document.querySelectorAll(".order-type-btn").forEach((b) => {
+            b.classList.toggle("active", b.dataset.type === "dine_in");
+          });
+          const tableSelect = document.getElementById("pos-table-select");
+          if (tableSelect) tableSelect.value = tbl.name;
+          const nameInput = document.getElementById("pos-cust-name");
+          if (nameInput) nameInput.value = tbl.name;
+          state.activeTableAppendOrderId = activeOrder.id;
+          handleOrderTypeChange();
+          updatePOSTableBanner();
         });
-        handleOrderTypeChange();
-        const nameInput = document.getElementById("pos-cust-name");
-        if (nameInput) nameInput.value = tbl.name;
-      });
+
+        card.querySelector(".btn-precheck-table").addEventListener("click", () => {
+          printPrecheck(activeOrder);
+        });
+
+        card.querySelector(".btn-settle-table").addEventListener("click", () => {
+          openPaymentModal(activeOrder);
+        });
+      } else {
+        card.className = "table-map-card table-free";
+        card.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <strong style="font-size:16px;">🪑 ${escapeHtml(tbl.name)}</strong>
+            <span style="color:#10b981; font-size:12px; font-weight:800;">🟢 Bo'sh</span>
+          </div>
+          <div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">${tbl.hall} · ${tbl.seats} o'rinli</div>
+          <button type="button" class="header-btn btn-order-for-table" style="width:100%; justify-content:center; background:rgba(33,79,252,0.2); border-color:rgba(33,79,252,0.5); color:#fff; font-weight:700; font-size:13px; padding:8px 4px;">
+            + Zakaz urish
+          </button>
+        `;
+
+        card.querySelector(".btn-order-for-table").addEventListener("click", () => {
+          switchTab("pos");
+          state.posOrderType = "dine_in";
+          document.querySelectorAll(".order-type-btn").forEach((b) => {
+            b.classList.toggle("active", b.dataset.type === "dine_in");
+          });
+          const tableSelect = document.getElementById("pos-table-select");
+          if (tableSelect) tableSelect.value = tbl.name;
+          const nameInput = document.getElementById("pos-cust-name");
+          if (nameInput) nameInput.value = tbl.name;
+          state.activeTableAppendOrderId = null;
+          handleOrderTypeChange();
+          updatePOSTableBanner();
+        });
+      }
 
       mapGrid.appendChild(card);
     });
