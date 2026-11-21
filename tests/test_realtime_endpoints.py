@@ -71,7 +71,12 @@ def main():
         assert st_app == 200 and d_app.get("ok") and len(d_app["order"]["items"]) == 2, f"Append failed: {d_app}"
         print(f"3. POST /api/orders/{ord_id}/append (Do-zakaz) -> SUCCESS ({len(d_app['order']['items'])} xil taom)")
 
-        # 4. POST /api/orders/:id/pay (Chiqishda to'lash / Kassada hisob-kitob)
+        # 4. PATCH /api/orders/:id ('cooking')
+        st, d3 = req_json(f"{base}/api/orders/{ord_id}", "PATCH", {"status": "cooking"}, auth_hdr)
+        assert st == 200 and d3.get("ok") and d3["order"]["status"] == "cooking", f"Patch order failed: {d3}"
+        print(f"4. PATCH /api/orders/{ord_id} ('cooking') -> SUCCESS")
+
+        # 5. POST /api/orders/:id/pay (Chiqishda to'lash / Kassada hisob-kitob)
         st_pay, d_pay = req_json(
             f"{base}/api/orders/{ord_id}/pay",
             "POST",
@@ -79,12 +84,7 @@ def main():
             auth_hdr,
         )
         assert st_pay == 200 and d_pay.get("ok") and d_pay["order"]["payment_status"] == "paid" and d_pay["order"]["status"] == "completed", f"Pay failed: {d_pay}"
-        print(f"4. POST /api/orders/{ord_id}/pay (Chiqishda to'lash) -> SUCCESS (paid & completed)")
-
-        # 5. PATCH /api/orders/:id ('cooking')
-        st, d3 = req_json(f"{base}/api/orders/{ord_id}", "PATCH", {"status": "cooking"}, auth_hdr)
-        assert st == 200 and d3.get("ok") and d3["order"]["status"] == "cooking", f"Patch order failed: {d3}"
-        print(f"5. PATCH /api/orders/{ord_id} ('cooking') -> SUCCESS")
+        print(f"5. POST /api/orders/{ord_id}/pay (Chiqishda to'lash) -> SUCCESS (paid & completed)")
 
         # 6. POST /api/reservations (VIP Xona)
         st, d4 = req_json(
