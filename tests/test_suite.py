@@ -73,7 +73,64 @@ def test_bot_database_and_logic():
     print("Таблицы в БД:", tables)
     assert "orders" in tables, "Таблица orders не найдена!"
     assert "users" in tables, "Таблица users не найдена!"
+
+    cursor.execute("PRAGMA table_info(orders);")
+    columns = [col[1] for col in cursor.fetchall()]
+    expected_cols = [
+        "service_fee_percent",
+        "service_fee",
+        "waiter_name",
+        "kitchen_status",
+        "delivery_mode",
+        "courier_name",
+        "courier_phone",
+        "courier_paid_upfront",
+        "cancel_reason",
+    ]
+    for c in expected_cols:
+        assert c in columns, f"Колонка {c} отсутствует в таблице orders!"
     conn.close()
+
+    # Test transactional logic
+    items_sample = [{"id": "burger_gamburger", "name": "Gamburger", "price": 35000, "qty": 1}]
+    payload = {
+        "customer_name": "Test Mehmon",
+        "phone": "+998901234567",
+        "comment": "Stol: 1-Stol",
+        "delivery_type": "dine_in",
+        "payment_method": "cash",
+        "source": "kassa",
+        "payment_status": "pending",
+        "waiter_name": "Jasur",
+        "items": items_sample,
+    }
+    built_order = bot.validate_and_build_order(payload, default_source="kassa", is_staff=True)
+    created, is_new = bot.save_order_transactional(built_order)
+    assert created.get("id"), "Не удалось создать заказ в транзакции"
+    assert created.get("service_fee") == 3500, f"Неверный service_fee: {created.get('service_fee')}"
+
+    # Test append items to active order
+    append_items = [{"id": "coca_cola_05", "name": "Coca-Cola 0.5L", "price": 8000, "qty": 1}]
+    appended = bot.append_items_to_order_transactional(created["id"], append_items)
+    assert appended.get("subtotal") == 43000, f"Subtotal после дозаказа: {appended.get('subtotal')}"
+    assert appended.get("service_fee") == 4300, f"Service fee после дозаказа: {appended.get('service_fee')}"
+    assert appended.get("total") == 47300, f"Total после дозаказа: {appended.get('total')}"
+
+    # Test pay order
+    paid = bot.pay_and_complete_order_transactional(created["id"], "card_terminal")
+    assert paid.get("payment_status") == "paid" and paid.get("status") == "completed"
+    assert paid.get("payment_method") == "card_terminal"
+
+    # Test pay idempotency
+    repaid = bot.pay_and_complete_order_transactional(created["id"], "card_terminal")
+    assert repaid.get("already_paid") is True, "Ожидался флаг already_paid"
+
+    # Test append to completed order raises ValueError
+    try:
+        bot.append_items_to_order_transactional(created["id"], append_items)
+        assert False, "Должна быть ошибка при дозаказе в закрытый заказ"
+    except ValueError as e:
+        print("Запрет дозаказа в закрытый заказ проверен успешно:", e)
             
     print("-> ТЕСТ 2 УСПЕШНО ПРОЙДЕН")
 
@@ -88,6 +145,18 @@ def test_html_and_assets():
     assert "menu_data.js" in idx_content, "Скрипт menu_data.js не подключен в index.html"
     assert "app.js" in idx_content, "Скрипт app.js не подключен в index.html"
     assert "style.css" in idx_content, "Стиль style.css не подключен в index.html"
+    assert "cart-service-fee-row" in idx_content, "cart-service-fee-row отсутствует в index.html"
+    assert "card_terminal" in idx_content, "card_terminal отсутствует в index.html"
+
+    admin_file = ROOT / "admin.html"
+    assert admin_file.exists(), "admin.html отсутствует!"
+    admin_content = admin_file.read_text(encoding="utf-8")
+    assert "tab-btn-kitchen" in admin_content, "tab-btn-kitchen отсутствует в admin.html"
+    assert "tab-btn-courier" in admin_content, "tab-btn-courier отсутствует в admin.html"
+    assert "courier-dispatch-modal" in admin_content, "courier-dispatch-modal отсутствует в admin.html"
+
+    courier_file = ROOT / "courier.html"
+    assert courier_file.exists(), "courier.html отсутствует!"
     
     manifest_file = ROOT / "manifest.json"
     assert manifest_file.exists(), "manifest.json отсутствует!"

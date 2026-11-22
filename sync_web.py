@@ -16,6 +16,7 @@ FILES_TO_SYNC = [
     "admin.html",
     "admin.js",
     "admin.css",
+    "courier.html",
 ]
 
 def sync_targets():

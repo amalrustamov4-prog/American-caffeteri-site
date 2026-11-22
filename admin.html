@@ -58,7 +58,7 @@
         </div>
       </div>
 
-      <!-- MODE TABS (KASSA / JONLI BUYURTMALAR / STOLLAR / STOP-LIST / HISOBOT) -->
+      <!-- MODE TABS (KASSA / JONLI BUYURTMALAR / OSHXONA / KURYER / STOLLAR / STOP-LIST / HISOBOT) -->
       <nav class="header-modes">
         <button type="button" id="tab-btn-pos" class="mode-tab-btn active">
           <i class="ti ti-device-tablet"></i> <span id="txt-tab-pos">Kassa (POS)</span>
@@ -66,6 +66,14 @@
         <button type="button" id="tab-btn-orders" class="mode-tab-btn">
           <i class="ti ti-chef-hat"></i> <span id="txt-tab-orders">Jonli Buyurtmalar</span>
           <span id="badge-new-orders" class="badge-count" hidden>0</span>
+        </button>
+        <button type="button" id="tab-btn-kitchen" class="mode-tab-btn">
+          <i class="ti ti-flame"></i> <span id="txt-tab-kitchen">👨‍🍳 Oshxona</span>
+          <span id="badge-kitchen-orders" class="badge-count" style="background:#ea580c;" hidden>0</span>
+        </button>
+        <button type="button" id="tab-btn-courier" class="mode-tab-btn">
+          <i class="ti ti-bike"></i> <span id="txt-tab-courier">🛵 Kuryer</span>
+          <span id="badge-courier-orders" class="badge-count" style="background:#0284c7;" hidden>0</span>
         </button>
         <button type="button" id="tab-btn-tables" class="mode-tab-btn">
           <i class="ti ti-armchair"></i> <span id="txt-tab-tables">Zaldagi Stollar</span>
@@ -317,12 +325,44 @@
       </div>
     </main>
 
-    <!-- ==================== VIEW 3: STOLLAR XARITASI (8 TABLES) ==================== -->
+    <!-- ==================== VIEW: OSHXONA KDS (EKRAN POVARA) ==================== -->
+    <main id="view-kitchen" class="orders-view-container" style="display:none;">
+      <div class="report-header-card" style="margin-bottom:16px;">
+        <div>
+          <h2 style="font-size:20px; font-weight:900;">👨‍🍳 Oshxona Ekran (KDS)</h2>
+          <p style="color:var(--text-muted); font-size:13px;">Tayyorlanayotgan taomlar — faqat taomlar va soni (narxlarsiz, katta shriftda)</p>
+        </div>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <span style="font-size:13px; font-weight:800; color:#ea580c;">🔥 Oshxona navbati: <span id="kitchen-queue-count">0</span> ta</span>
+        </div>
+      </div>
+      <div id="kitchen-live-grid" class="orders-cards-grid">
+        <!-- Rendered by JS -->
+      </div>
+    </main>
+
+    <!-- ==================== VIEW: KURYER EKRANI (DELIVERY DISPATCH) ==================== -->
+    <main id="view-courier" class="orders-view-container" style="display:none;">
+      <div class="report-header-card" style="margin-bottom:16px;">
+        <div>
+          <h2 style="font-size:20px; font-weight:900;">🛵 Kuryer Ekran (Dostavka)</h2>
+          <p style="color:var(--text-muted); font-size:13px;">Tayyor va yo'ldagi yetkazib berish buyurtmalari</p>
+        </div>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <span style="font-size:13px; font-weight:800; color:#0284c7;">📦 Dostavka navbati: <span id="courier-queue-count">0</span> ta</span>
+        </div>
+      </div>
+      <div id="courier-live-grid" class="orders-cards-grid">
+        <!-- Rendered by JS -->
+      </div>
+    </main>
+
+    <!-- ==================== VIEW 3: STOLLAR XARITASI (8 TABLES + VIP XONA) ==================== -->
     <main id="view-tables" class="orders-view-container" style="display:none;">
       <div class="report-header-card" style="margin-bottom:16px;">
         <div>
-          <h2 style="font-size:20px; font-weight:900;">🪑 Zal va Stollar (8 ta stol)</h2>
-          <p style="color:var(--text-muted); font-size:13px;">Asosiy Zal stollari — Stol ustiga bosib bevosita zakaz uring</p>
+          <h2 style="font-size:20px; font-weight:900;">🪑 Zal va Stollar (8 stol + VIP Xona)</h2>
+          <p style="color:var(--text-muted); font-size:13px;">Asosiy Zal va VIP Xona — Stol ustiga bosib bevosita zakaz uring</p>
         </div>
         <div style="display:flex; gap:10px; align-items:center;">
           <span class="table-status-legend"><span class="dot-free"></span> Bo'sh</span>
@@ -507,6 +547,63 @@
         </button>
         <button id="btn-confirm-cash-op" type="button" class="btn-primary-large" style="flex:2; margin-top:0;">
           Tasdiqlash
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== COURIER DISPATCH MODAL ==================== -->
+  <div id="courier-dispatch-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-card" style="max-width:440px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h3 style="font-size:18px; font-weight:800;">🛵 Kuryerga Topshirish</h3>
+        <button id="btn-close-courier-modal" type="button" class="header-btn" style="border:none; font-size:18px;">&times;</button>
+      </div>
+      <p style="font-size:13px; color:var(--text-muted); margin:6px 0 12px;">
+        Buyurtma: <strong id="cdm-order-code">#AC-1001</strong> · Summa: <strong id="cdm-order-sum">0 so'm</strong>
+      </p>
+
+      <div id="cdm-terminal-alert" style="display:none; background:#fef2f2; border:2px solid #ef4444; color:#991b1b; padding:10px; border-radius:8px; font-size:13px; font-weight:800; margin-bottom:12px;">
+        💳 DIQQAT: Mijoz terminal tanlagan! Kuryer o'zi bilan TERMINAL olishi shart!
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:12px;">
+        <label style="font-weight:700; font-size:13px;">Kuryer modeli:</label>
+        <div style="display:flex; gap:10px;">
+          <label style="flex:1; display:flex; align-items:center; gap:6px; padding:8px 10px; border:2px solid var(--ink); border-radius:8px; cursor:pointer; background:#fff;">
+            <input type="radio" name="cdm_delivery_mode" value="own_courier" id="cdm-mode-own" checked />
+            <span style="font-size:13px; font-weight:700;">🛵 O'zimizning kuryer</span>
+          </label>
+          <label id="cdm-mode-external-wrap" style="flex:1; display:flex; align-items:center; gap:6px; padding:8px 10px; border:2px solid var(--ink); border-radius:8px; cursor:pointer; background:#fff;">
+            <input type="radio" name="cdm_delivery_mode" value="external_buyout" id="cdm-mode-external" />
+            <span style="font-size:13px; font-weight:700;">🚕 Tashqi / Vyкуп</span>
+          </label>
+        </div>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;">
+        <label class="field-label" style="font-size:12.5px; font-weight:700;">Kuryer ismi / Mashina raqami:</label>
+        <input type="text" id="cdm-courier-name" class="input-styled" placeholder="Masalan: Sardor yoki Matiz 01A777AA" />
+        <label class="field-label" style="font-size:12.5px; font-weight:700;">Kuryer telefoni:</label>
+        <input type="tel" id="cdm-courier-phone" class="input-styled" placeholder="+998 90 123 45 67" />
+      </div>
+
+      <div id="cdm-buyout-section" style="display:none; background:#f0fdf4; border:1px solid #16a34a; border-radius:8px; padding:10px; margin-bottom:14px;">
+        <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer;">
+          <input type="checkbox" id="cdm-courier-paid-upfront" style="margin-top:2px;" />
+          <span style="font-size:12.5px; font-weight:800; color:#166534;">
+            ✅ Kuryer taomlar pulini kassaga naqd to'ladi (Выкуп на месте)
+          </span>
+        </label>
+        <p style="font-size:11px; color:#15803d; margin:4px 0 0 24px;">
+          Pul hoziroq kassa hisobotiga naqd tushum sifatida qo'shiladi va qayta yetkazilganda takrorlanmaydi.
+        </p>
+      </div>
+
+      <div style="display:flex; gap:10px;">
+        <button id="btn-cdm-cancel" type="button" class="header-btn" style="flex:1; padding:10px; font-weight:700;">Bekor qilish</button>
+        <button id="btn-cdm-confirm" type="button" class="btn-primary-large" style="flex:2; margin:0; background:#0284c7;">
+          <i class="ti ti-check"></i> <span>Kuryerga jo'natish</span>
         </button>
       </div>
     </div>

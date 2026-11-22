@@ -97,10 +97,37 @@ export default async function handler(req, res) {
     const comment = String(payload.comment || customer.comment || '').trim().slice(0, 300);
     const promoCode = String(payload.promo_code || '').trim().toUpperCase();
 
+    const posBackendUrl = (process.env.POS_BACKEND_URL || '').trim().replace(/\/+$/, '');
+    if (posBackendUrl) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        const proxyRes = await fetch(`${posBackendUrl}/api/orders`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Forwarded-For': req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '',
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        if (proxyRes.ok) {
+          const proxyData = await proxyRes.json();
+          return res.status(201).json(proxyData);
+        }
+      } catch (proxyErr) {
+        console.warn('POS_BACKEND_URL unreachable, falling back to direct Telegram notification:', proxyErr.message);
+      }
+    }
+
     const rawPayMethod = String(payload.payment_method || customer.payment_method || 'cash').trim().toLowerCase();
     let paymentMethod = 'cash';
     let payMethodLabel = "💵 Naqd pul (Наличные)";
-    if (['card', 'terminal', 'humo', 'uzcard'].includes(rawPayMethod)) {
+    if (['card_terminal', 'terminal_courier', 'courier_terminal'].includes(rawPayMethod)) {
+      paymentMethod = 'card_terminal';
+      payMethodLabel = "💳 Kuryerda terminal (Карта курьеру)";
+    } else if (['card', 'terminal', 'humo', 'uzcard'].includes(rawPayMethod)) {
       paymentMethod = 'card';
       payMethodLabel = "💳 Karta / Terminal (Карта)";
     } else if (['online', 'click', 'payme'].includes(rawPayMethod)) {
@@ -115,8 +142,10 @@ export default async function handler(req, res) {
     const subtotal = items.reduce((s, it) => s + it.price * it.qty, 0);
     const discount = PROMOS[promoCode] ? Math.round(subtotal * PROMOS[promoCode]) : 0;
     const afterDiscount = Math.max(0, subtotal - discount);
+    const serviceFeePercent = deliveryType === 'dine_in' ? 10 : 0;
+    const serviceFee = serviceFeePercent > 0 ? Math.round(afterDiscount * serviceFeePercent / 100) : 0;
     const deliveryFee = deliveryType === 'delivery' ? (afterDiscount >= 100000 ? 0 : 10000) : 0;
-    const totalAmount = afterDiscount + deliveryFee;
+    const totalAmount = afterDiscount + deliveryFee + serviceFee;
 
     const nowUtc = new Date().toISOString();
     const idempotencyKey = String(payload.idempotency_key || '').trim().slice(0, 100) || null;

@@ -15,6 +15,7 @@
     { id: "6-Stol", name: "6-Stol", hall: "Asosiy Zal", seats: 6 },
     { id: "7-Stol", name: "7-Stol", hall: "Asosiy Zal", seats: 4 },
     { id: "8-Stol", name: "8-Stol", hall: "Asosiy Zal", seats: 8 },
+    { id: "VIP Xona", name: "VIP Xona", hall: "VIP", seats: 10 },
   ];
 
   // ==================== STATE ====================
@@ -331,6 +332,8 @@
     // Mode Tabs
     document.getElementById("tab-btn-pos")?.addEventListener("click", () => switchTab("pos"));
     document.getElementById("tab-btn-orders")?.addEventListener("click", () => switchTab("orders"));
+    document.getElementById("tab-btn-kitchen")?.addEventListener("click", () => switchTab("kitchen"));
+    document.getElementById("tab-btn-courier")?.addEventListener("click", () => switchTab("courier"));
     document.getElementById("tab-btn-tables")?.addEventListener("click", () => switchTab("tables"));
     document.getElementById("tab-btn-stoplist")?.addEventListener("click", () => switchTab("stoplist"));
     document.getElementById("tab-btn-report")?.addEventListener("click", () => switchTab("report"));
@@ -510,6 +513,23 @@
     document.getElementById("btn-confirm-z-report")?.addEventListener("click", () => {
       document.getElementById("z-report-modal").style.display = "none";
       printShiftReport("Z");
+    });
+
+    // Courier Dispatch Modal events
+    document.getElementById("btn-close-courier-modal")?.addEventListener("click", () => {
+      document.getElementById("courier-dispatch-modal").style.display = "none";
+    });
+    document.getElementById("btn-cdm-cancel")?.addEventListener("click", () => {
+      document.getElementById("courier-dispatch-modal").style.display = "none";
+    });
+    document.getElementById("btn-cdm-confirm")?.addEventListener("click", confirmCourierDispatch);
+
+    document.querySelectorAll("input[name='cdm_delivery_mode']").forEach((radio) => {
+      radio.addEventListener("change", () => {
+        const isExternal = document.getElementById("cdm-mode-external")?.checked;
+        const buyoutSec = document.getElementById("cdm-buyout-section");
+        if (buyoutSec) buyoutSec.style.display = isExternal ? "block" : "none";
+      });
     });
   }
 
@@ -730,7 +750,7 @@
     state.currentTab = tab;
     document.querySelectorAll(".mode-tab-btn").forEach((b) => b.classList.remove("active"));
 
-    const views = ["pos", "orders", "tables", "stoplist", "report"];
+    const views = ["pos", "orders", "kitchen", "courier", "tables", "stoplist", "report"];
     views.forEach((v) => {
       const el = document.getElementById("view-" + v);
       if (el) el.style.display = v === tab ? "flex" : "none";
@@ -744,6 +764,8 @@
       updatePOSTableBanner();
     }
     else if (tab === "orders") renderLiveOrders();
+    else if (tab === "kitchen") renderKitchenView();
+    else if (tab === "courier") renderCourierView();
     else if (tab === "tables") {
       fetchReservations();
       renderTablesAndReservations();
@@ -1889,7 +1911,9 @@
       else if (src === "kassa") srcBadge = `<span class="order-source-tag src-kassa">🖥️ KASSA</span>`;
       else if (src.includes("app") || src.includes("android")) srcBadge = `<span class="order-source-tag src-app">📱 ILOVA</span>`;
 
+      const isDineIn = ord.delivery_type === "dine_in";
       const st = normalizeStatus(ord.status);
+      const isReadyFromKitchen = ord.kitchen_status === "ready" || st === "ready";
       let actionButtons = "";
       if (st === "new") {
         actionButtons = `
@@ -1897,16 +1921,24 @@
             ${t("act_to_kitchen")}
           </button>
         `;
-      } else if (st === "preparing") {
+      } else if (!isDineIn) {
+        if (st === "preparing" || st === "ready") {
+          actionButtons = `
+            <button type="button" class="btn-action-courier-modal btn-status-deliv" data-id="${ord.id}">
+              ${t("act_to_courier")}
+            </button>
+          `;
+        } else if (st === "delivering") {
+          actionButtons = `
+            <button type="button" class="btn-action-status btn-status-done" data-id="${ord.id}" data-st="completed">
+              ${t("act_to_done")}
+            </button>
+          `;
+        }
+      } else if (isDineIn && isReadyFromKitchen) {
         actionButtons = `
-          <button type="button" class="btn-action-status btn-status-deliv" data-id="${ord.id}" data-st="delivering">
-            ${t("act_to_courier")}
-          </button>
-        `;
-      } else if (st === "delivering") {
-        actionButtons = `
-          <button type="button" class="btn-action-status btn-status-done" data-id="${ord.id}" data-st="completed">
-            ${t("act_to_done")}
+          <button type="button" class="btn-action-served btn-status-done" data-id="${ord.id}" style="background:#059669; border-color:#047857; color:#fff; font-weight:800; padding:6px 10px; font-size:12px;">
+            🍽️ Stolga berildi
           </button>
         `;
       }
@@ -1938,7 +1970,7 @@
       const ordCode = getOrderCode(ord);
 
       const isUnpaidDineIn =
-        ord.delivery_type === "dine_in" &&
+        isDineIn &&
         (ord.payment_status === "pending" || ord.payment_method === "unpaid") &&
         st !== "completed" &&
         st !== "cancelled";
@@ -1946,6 +1978,10 @@
       const payBadge = isUnpaidDineIn
         ? `<span style="display:inline-block; font-size:11px; padding:2px 6px; border-radius:4px; font-weight:800; background:#fef3c7; color:#d97706; border:1px solid #f59e0b; margin-left:6px;">🟡 Chiqishda to'lanadi</span>`
         : (ord.payment_status === "paid" ? `<span style="display:inline-block; font-size:11px; padding:2px 6px; border-radius:4px; font-weight:800; background:#d1fae5; color:#065f46; border:1px solid #10b981; margin-left:6px;">🟢 To'langan</span>` : "");
+
+      const readyAlert = (isDineIn && isReadyFromKitchen)
+        ? `<div style="background:#10b981; color:#fff; font-weight:900; font-size:12px; padding:5px 8px; border-radius:5px; text-align:center; margin-bottom:8px; animation:pulse 1.5s infinite;">🔔 TAYYOR — Olib keting!</div>`
+        : "";
 
       card.innerHTML = `
         <div class="order-card-header">
@@ -1960,6 +1996,8 @@
             <span class="order-time-ago">${formatTime(ord.created_at_utc || ord.created_at_local)}</span>
           </div>
         </div>
+
+        ${readyAlert}
 
         <div class="order-customer-box">
           <div class="order-customer-name">👤 ${escapeHtml(ord.customer_name || "Mijoz")}</div>
@@ -1982,10 +2020,10 @@
 
         <div class="order-actions-row">
           ${isUnpaidDineIn ? `
-            <button type="button" class="btn-action-status btn-pay-exit-ord" data-id="${ord.id}" title="Chiqishda to'lovni qabul qilish" style="background:#10b981; border-color:#059669; color:#fff; font-weight:800; padding:6px 10px; font-size:12px;">
+            <button type="button" class="btn-action-pay-exit btn-pay-exit-ord" data-id="${ord.id}" title="Chiqishda to'lovni qabul qilish" style="background:#10b981; border-color:#059669; color:#fff; font-weight:800; padding:6px 10px; font-size:12px; cursor:pointer;">
               💳 Chiqishda to'lov
             </button>
-            <button type="button" class="btn-action-print btn-print-precheck" data-id="${ord.id}" title="Predchek chiqarish" style="background:rgba(245,158,11,0.2); border-color:rgba(245,158,11,0.5); color:#f59e0b; font-weight:700; padding:6px 10px; font-size:12px;">
+            <button type="button" class="btn-action-print btn-print-precheck" data-id="${ord.id}" title="Predchek chiqarish" style="background:rgba(245,158,11,0.2); border-color:rgba(245,158,11,0.5); color:#f59e0b; font-weight:700; padding:6px 10px; font-size:12px; cursor:pointer;">
               🧾 Predchek
             </button>
           ` : ""}
@@ -2008,6 +2046,14 @@
 
       card.querySelectorAll(".btn-action-status").forEach((b) => {
         b.addEventListener("click", () => updateOrderStatus(b.dataset.id, b.dataset.st));
+      });
+
+      card.querySelectorAll(".btn-action-served").forEach((b) => {
+        b.addEventListener("click", () => updateOrderKitchenStatus(ord.id, "served"));
+      });
+
+      card.querySelectorAll(".btn-action-courier-modal").forEach((b) => {
+        b.addEventListener("click", () => openCourierDispatchModal(ord));
       });
 
       const payExitBtn = card.querySelector(".btn-pay-exit-ord");
@@ -2187,10 +2233,15 @@
     const area = document.getElementById("thermal-receipt-print-area");
     if (!area) return;
 
-    const total = getOrderTotal(ord);
+    const ordTotal = getOrderTotal(ord);
+    const subtotal = Number(ord.subtotal || ordTotal);
+    const serviceFee = Number(ord.service_fee || (ord.delivery_type === "dine_in" ? Math.round(subtotal * 0.10) : 0));
+    const discount = Number(ord.discount || 0);
+    const grandTotal = Number(ord.total || (subtotal - discount + serviceFee));
+
     const items = Array.isArray(ord.items)
       ? ord.items
-      : [{ name: ord.items_summary || "Buyurtma", price: total, qty: 1 }];
+      : [{ name: ord.items_summary || "Buyurtma", price: subtotal, qty: 1 }];
 
     let itemsHtml = "";
     items.forEach((it, idx) => {
@@ -2239,10 +2290,24 @@
         </tbody>
       </table>
 
-      <div style="font-size: 13px; margin-bottom: 6px;">
+      <div style="font-size: 13px; margin-bottom: 6px; border-top: 1px dashed #000; padding-top: 4px;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:2px;">
+          <span>Taomlar summasi:</span>
+          <span>${subtotal.toLocaleString("ru-RU")} UZS</span>
+        </div>
+        ${discount > 0 ? `
+        <div style="display:flex; justify-content:space-between; margin-bottom:2px; color:#166534;">
+          <span>Chegirma (${escapeHtml(ord.promo_code || "")}):</span>
+          <span>-${discount.toLocaleString("ru-RU")} UZS</span>
+        </div>` : ""}
+        ${serviceFee > 0 ? `
+        <div style="display:flex; justify-content:space-between; margin-bottom:2px; font-weight:700;">
+          <span>Xizmat haqi (10%):</span>
+          <span>+${serviceFee.toLocaleString("ru-RU")} UZS</span>
+        </div>` : ""}
         <div style="display:flex; justify-content:space-between; font-size: 16px; font-weight: 900; border-top: 2px solid #000; padding-top: 4px; margin-top: 4px;">
-          <span>TO'LANADIGAN JAMI:</span>
-          <span>${total.toLocaleString("ru-RU")} UZS</span>
+          <span>JAMI TO'LOV:</span>
+          <span>${grandTotal.toLocaleString("ru-RU")} UZS</span>
         </div>
       </div>
 
@@ -2280,6 +2345,388 @@
     } catch (e) {
       console.warn("Status update error:", e);
     }
+  }
+
+  async function updateOrderKitchenStatus(id, kitchenStatus) {
+    try {
+      const payload = { kitchen_status: kitchenStatus };
+      if (kitchenStatus === "ready") {
+        payload.status = "ready";
+      } else if (kitchenStatus === "cooking") {
+        payload.status = "cooking";
+      }
+      const res = await fetch(getAdminApiUrl(`/api/admin/orders/${id}/status`), {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ok && data.order) {
+          updateOrderInList(data.order);
+          if (state.bc) {
+            state.bc.postMessage({ type: "order_updated", order: data.order });
+          }
+          fetchStats();
+        }
+      }
+    } catch (e) {
+      console.warn("Kitchen status update error:", e);
+    }
+  }
+
+  let activeCourierDispatchOrderId = null;
+
+  function openCourierDispatchModal(ord) {
+    activeCourierDispatchOrderId = ord.id;
+    const modal = document.getElementById("courier-dispatch-modal");
+    if (!modal) return;
+
+    document.getElementById("cdm-order-code").textContent = getOrderCode(ord);
+    document.getElementById("cdm-order-sum").textContent = getOrderTotal(ord).toLocaleString("ru-RU") + " so'm";
+
+    const isCardTerminal = ord.payment_method === "card_terminal" || (ord.comment || "").toLowerCase().includes("terminal");
+    const terminalAlert = document.getElementById("cdm-terminal-alert");
+    if (terminalAlert) terminalAlert.style.display = isCardTerminal ? "block" : "none";
+
+    const extWrap = document.getElementById("cdm-mode-external-wrap");
+    const extRadio = document.getElementById("cdm-mode-external");
+    const ownRadio = document.getElementById("cdm-mode-own");
+
+    if (isCardTerminal) {
+      if (extRadio) {
+        extRadio.disabled = true;
+        extRadio.checked = false;
+      }
+      if (extWrap) {
+        extWrap.style.opacity = "0.5";
+        extWrap.title = "Tashqi kuryerda kafening terminali yo'q — terminal bilan o'zimizning kuryer borishi shart!";
+      }
+      if (ownRadio) ownRadio.checked = true;
+    } else {
+      if (extRadio) extRadio.disabled = false;
+      if (extWrap) {
+        extWrap.style.opacity = "1";
+        extWrap.title = "";
+      }
+      if (ownRadio) ownRadio.checked = true;
+    }
+
+    const buyoutSec = document.getElementById("cdm-buyout-section");
+    if (buyoutSec) buyoutSec.style.display = "none";
+    const paidUpfrontCheckbox = document.getElementById("cdm-courier-paid-upfront");
+    if (paidUpfrontCheckbox) paidUpfrontCheckbox.checked = false;
+
+    modal.style.display = "flex";
+  }
+
+  async function confirmCourierDispatch() {
+    if (!activeCourierDispatchOrderId) return;
+    const ord = state.orders.find((o) => o.id === activeCourierDispatchOrderId);
+    if (!ord) return;
+
+    const isExternal = document.getElementById("cdm-mode-external")?.checked;
+    const deliveryMode = isExternal ? "external_buyout" : "own_courier";
+    const courierName = document.getElementById("cdm-courier-name")?.value.trim() || "";
+    const courierPhone = document.getElementById("cdm-courier-phone")?.value.trim() || "";
+    const isPaidUpfront = isExternal && Boolean(document.getElementById("cdm-courier-paid-upfront")?.checked);
+
+    const isCardTerminal = ord.payment_method === "card_terminal" || (ord.comment || "").toLowerCase().includes("terminal");
+    if (isExternal && isCardTerminal) {
+      alert("Tashqi kuryerda terminal yo'q! Mijoz terminal so'ragan, faqat o'zimizning kuryerni tanlang.");
+      return;
+    }
+
+    const payload = {
+      status: "delivering",
+      delivery_mode: deliveryMode,
+      courier_name: courierName,
+      courier_phone: courierPhone,
+      courier_paid_upfront: isPaidUpfront ? 1 : 0,
+    };
+    if (isPaidUpfront) {
+      payload.payment_status = "paid";
+      payload.payment_method = "cash";
+    }
+
+    try {
+      const res = await fetch(getAdminApiUrl(`/api/admin/orders/${ord.id}/status`), {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ok && data.order) {
+          updateOrderInList(data.order);
+          if (state.bc) {
+            state.bc.postMessage({ type: "order_updated", order: data.order });
+          }
+          fetchStats();
+        }
+      }
+    } catch (e) {
+      console.warn("Courier dispatch error:", e);
+    }
+
+    const modal = document.getElementById("courier-dispatch-modal");
+    if (modal) modal.style.display = "none";
+    activeCourierDispatchOrderId = null;
+  }
+
+  function renderKitchenView() {
+    const grid = document.getElementById("kitchen-live-grid");
+    const countBadge = document.getElementById("kitchen-queue-count");
+    const navBadge = document.getElementById("badge-kitchen-orders");
+    if (!grid) return;
+
+    grid.innerHTML = "";
+    const activeOrders = state.orders.filter((o) => {
+      const st = normalizeStatus(o.status);
+      return (st === "new" || st === "accepted" || st === "cooking" || st === "preparing") && o.status !== "completed" && o.status !== "cancelled";
+    });
+
+    if (countBadge) countBadge.textContent = activeOrders.length;
+    if (navBadge) {
+      navBadge.textContent = activeOrders.length;
+      navBadge.hidden = activeOrders.length === 0;
+    }
+
+    if (activeOrders.length === 0) {
+      grid.innerHTML = `
+        <div style="grid-column:1/-1; text-align:center; padding:48px 20px; background:#fff; border:2px dashed #232424; border-radius:12px;">
+          <h3 style="font-size:20px; font-weight:900; color:var(--ink);">🎉 Oshxona bo'sh — Barcha taomlar tayyorlandi!</h3>
+          <p style="color:var(--text-muted); font-size:14px; margin-top:6px;">Yangi buyurtma kelganda bu yerda avtomatik paydo bo'ladi.</p>
+        </div>
+      `;
+      return;
+    }
+
+    activeOrders.forEach((ord) => {
+      const card = document.createElement("div");
+      card.className = "order-live-card";
+      card.style.border = "3px solid #ea580c";
+      card.style.boxShadow = "4px 4px 0 #ea580c";
+
+      const ordCode = getOrderCode(ord);
+      const isDineIn = ord.delivery_type === "dine_in";
+      const placeLabel = isDineIn ? `🪑 ${escapeHtml(ord.customer_name || ord.address || "Stol")}` : `🛵 Dostavka (${escapeHtml(ord.customer_name || "Mijoz")})`;
+
+      let itemsHtml = "";
+      if (Array.isArray(ord.items)) {
+        ord.items.forEach((it, idx) => {
+          const rawNm = typeof it.name === "object" ? getDishName(it) : (it.name || "Taom");
+          itemsHtml += `
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:2px dashed rgba(35,36,36,0.15);">
+              <span style="font-size:18px; font-weight:800; color:#232424;">${idx + 1}. ${escapeHtml(rawNm)}</span>
+              <span style="font-size:24px; font-weight:900; color:#ea580c; background:#ffedd5; padding:2px 10px; border-radius:6px; border:1px solid #fdba74;">
+                × ${it.qty || 1}
+              </span>
+            </div>
+          `;
+        });
+      } else if (ord.items_summary) {
+        itemsHtml = `<div style="font-size:18px; font-weight:800; padding:8px 0;">${ord.items_summary}</div>`;
+      }
+
+      const st = normalizeStatus(ord.status);
+      const isCooking = st === "cooking" || ord.kitchen_status === "cooking";
+
+      card.innerHTML = `
+        <div class="order-card-header" style="background:#fff7ed; padding:10px 12px; border-bottom:2px solid #ea580c;">
+          <div>
+            <span style="font-size:18px; font-weight:900; color:#ea580c;">${ordCode}</span>
+            <div style="font-size:16px; font-weight:900; color:#232424; margin-top:2px;">${placeLabel}</div>
+          </div>
+          <div class="order-timing-box">
+            <span class="sla-timer-badge" data-created="${ord.created_at_utc || ord.created_at_local || ""}" data-status="${st}">
+              <i class="ti ti-clock"></i> <span class="sla-text">00:00</span>
+            </span>
+          </div>
+        </div>
+
+        ${ord.comment ? `
+          <div style="background:#fef3c7; border:1px solid #f59e0b; color:#92400e; padding:6px 10px; font-weight:700; font-size:13px; margin:8px 12px 0; border-radius:6px;">
+            💬 Izoh: ${escapeHtml(ord.comment)}
+          </div>
+        ` : ""}
+
+        <div style="padding:12px; flex:1;">
+          ${itemsHtml}
+        </div>
+
+        <div style="display:flex; gap:8px; padding:10px 12px; background:#f9fafb; border-top:2px solid rgba(35,36,36,0.15);">
+          <button type="button" class="btn-kitchen-cooking" data-id="${ord.id}" style="flex:1; background:${isCooking ? '#fdba74' : '#fff'}; border:2px solid #ea580c; color:#ea580c; font-weight:900; padding:10px; border-radius:8px; font-size:14px; cursor:pointer;">
+            ${isCooking ? "🔥 Tayyorlanmoqda" : "🔥 Tayyorlash"}
+          </button>
+          <button type="button" class="btn-kitchen-ready" data-id="${ord.id}" style="flex:1.5; background:#10b981; border:2px solid #059669; color:#fff; font-weight:900; padding:10px; border-radius:8px; font-size:15px; cursor:pointer;">
+            ✅ TAYYOR (Olib ketish)
+          </button>
+        </div>
+      `;
+
+      card.querySelector(".btn-kitchen-cooking")?.addEventListener("click", () => {
+        updateOrderKitchenStatus(ord.id, "cooking");
+      });
+
+      card.querySelector(".btn-kitchen-ready")?.addEventListener("click", () => {
+        updateOrderKitchenStatus(ord.id, "ready");
+      });
+
+      grid.appendChild(card);
+    });
+    updateAllSlaTimers();
+  }
+
+  function renderCourierView() {
+    const grid = document.getElementById("courier-live-grid");
+    const countBadge = document.getElementById("courier-queue-count");
+    const navBadge = document.getElementById("badge-courier-orders");
+    if (!grid) return;
+
+    grid.innerHTML = "";
+    const deliveryOrders = state.orders.filter((o) => {
+      const st = normalizeStatus(o.status);
+      return o.delivery_type === "delivery" && (st === "ready" || st === "delivering" || st === "preparing") && o.status !== "completed" && o.status !== "cancelled";
+    });
+
+    if (countBadge) countBadge.textContent = deliveryOrders.length;
+    if (navBadge) {
+      navBadge.textContent = deliveryOrders.length;
+      navBadge.hidden = deliveryOrders.length === 0;
+    }
+
+    if (deliveryOrders.length === 0) {
+      grid.innerHTML = `
+        <div style="grid-column:1/-1; text-align:center; padding:48px 20px; background:#fff; border:2px dashed #232424; border-radius:12px;">
+          <h3 style="font-size:20px; font-weight:900; color:var(--ink);">🛵 Kuryer navbati bo'sh!</h3>
+          <p style="color:var(--text-muted); font-size:14px; margin-top:6px;">Yetkazib berish buyurtmalari tayyor bo'lganda bu yerda ko'rinadi.</p>
+        </div>
+      `;
+      return;
+    }
+
+    deliveryOrders.forEach((ord) => {
+      const card = document.createElement("div");
+      card.className = "order-live-card";
+      card.style.border = "3px solid #0284c7";
+      card.style.boxShadow = "4px 4px 0 #0284c7";
+
+      const ordCode = getOrderCode(ord);
+      const total = getOrderTotal(ord);
+      const st = normalizeStatus(ord.status);
+
+      const rawPm = String(ord.payment_method || "cash").toLowerCase();
+      const isPaid = ord.payment_status === "paid" || ord.courier_paid_upfront === 1;
+
+      let payBadge = "";
+      if (isPaid) {
+        payBadge = `<div style="background:#d1fae5; border:2px solid #10b981; color:#065f46; font-size:14px; font-weight:900; padding:6px 12px; border-radius:6px; text-align:center;">🟢 TO'LANGAN (Kassada to'langan / Click)</div>`;
+      } else if (rawPm === "card_terminal" || (ord.comment || "").toLowerCase().includes("terminal")) {
+        payBadge = `<div style="background:#fee2e2; border:2px solid #ef4444; color:#991b1b; font-size:14px; font-weight:900; padding:6px 12px; border-radius:6px; text-align:center;">💳 KURYERDA TERMINAL: ${total.toLocaleString("ru-RU")} so'm</div>`;
+      } else {
+        payBadge = `<div style="background:#fef3c7; border:2px solid #f59e0b; color:#92400e; font-size:14px; font-weight:900; padding:6px 12px; border-radius:6px; text-align:center;">💵 NAQD PUL: ${total.toLocaleString("ru-RU")} so'm oling</div>`;
+      }
+
+      let itemsSummary = "";
+      if (Array.isArray(ord.items)) {
+        itemsSummary = ord.items.map((i) => `${typeof i.name === "object" ? getDishName(i) : i.name} × ${i.qty || 1}`).join(", ");
+      } else {
+        itemsSummary = ord.items_summary || "Taomlar";
+      }
+
+      card.innerHTML = `
+        <div class="order-card-header" style="background:#f0f9ff; padding:10px 12px; border-bottom:2px solid #0284c7;">
+          <div>
+            <span style="font-size:18px; font-weight:900; color:#0284c7;">${ordCode}</span>
+            <div style="font-size:13px; font-weight:800; color:#555;">${escapeHtml(ord.customer_name || "Mijoz")}</div>
+          </div>
+          <div class="order-timing-box">
+            <span class="sla-timer-badge" data-created="${ord.created_at_utc || ord.created_at_local || ""}" data-status="${st}">
+              <i class="ti ti-clock"></i> <span class="sla-text">00:00</span>
+            </span>
+          </div>
+        </div>
+
+        <div style="padding:12px; display:flex; flex-direction:column; gap:8px;">
+          <div>
+            <div style="font-size:12px; font-weight:700; color:var(--text-muted);">MANZIL:</div>
+            <a href="https://maps.google.com/?q=${encodeURIComponent(ord.address || 'Termiz')}" target="_blank" style="font-size:15px; font-weight:900; color:#0284c7; text-decoration:underline;">
+              📍 ${escapeHtml(ord.address || "Manzil ko'rsatilmagan")}
+            </a>
+          </div>
+
+          <div>
+            <div style="font-size:12px; font-weight:700; color:var(--text-muted);">TELEFON:</div>
+            <a href="tel:${escapeHtml(ord.phone || '')}" style="font-size:16px; font-weight:900; color:#16a34a;">
+              📞 ${escapeHtml(ord.phone || '—')}
+            </a>
+          </div>
+
+          <div style="font-size:13px; font-weight:700; color:#374151; background:#f9fafb; padding:6px 10px; border-radius:6px; border:1px solid #e5e7eb;">
+            🍲 <b>Taomlar:</b> ${escapeHtml(itemsSummary)}
+          </div>
+
+          ${ord.comment ? `
+            <div style="font-size:12px; font-weight:700; color:#b45309; background:#fffbeb; padding:4px 8px; border-radius:4px;">
+              💬 Izoh: ${escapeHtml(ord.comment)}
+            </div>
+          ` : ""}
+
+          ${payBadge}
+        </div>
+
+        <div style="display:flex; gap:8px; padding:10px 12px; background:#f9fafb; border-top:2px solid rgba(35,36,36,0.15);">
+          ${st !== "delivering" ? `
+            <button type="button" class="btn-courier-take" data-id="${ord.id}" style="flex:1; background:#0284c7; border:2px solid #0369a1; color:#fff; font-weight:900; padding:10px; border-radius:8px; font-size:14px; cursor:pointer;">
+              🛵 Yetkazishga oldim
+            </button>
+          ` : `
+            <button type="button" class="btn-courier-delivered" data-id="${ord.id}" style="flex:1; background:#10b981; border:2px solid #059669; color:#fff; font-weight:900; padding:10px; border-radius:8px; font-size:15px; cursor:pointer;">
+              ✅ Yetkazildi / To'lov olindi
+            </button>
+          `}
+        </div>
+      `;
+
+      card.querySelector(".btn-courier-take")?.addEventListener("click", () => {
+        updateOrderStatus(ord.id, "delivering");
+      });
+
+      card.querySelector(".btn-courier-delivered")?.addEventListener("click", async () => {
+        try {
+          const res = await fetch(getAdminApiUrl(`/api/admin/orders/${ord.id}/status`), {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              ...getAuthHeaders(),
+            },
+            body: JSON.stringify({ status: "completed", payment_status: "paid" }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.ok && data.order) {
+              updateOrderInList(data.order);
+              if (state.bc) {
+                state.bc.postMessage({ type: "order_updated", order: data.order });
+              }
+              fetchStats();
+            }
+          }
+        } catch (e) {
+          console.warn("Delivery completed error:", e);
+        }
+      });
+
+      grid.appendChild(card);
+    });
+    updateAllSlaTimers();
   }
 
   // ==================== 17-TABLE MAP & ONLINE RESERVATIONS ====================

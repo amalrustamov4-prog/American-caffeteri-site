@@ -1846,7 +1846,11 @@ try {
         deliveryType = 'delivery';
         if (addrWrap) addrWrap.classList.remove('hidden');
         if (tableWrap) tableWrap.classList.add('hidden');
+        const payExitWrap = document.getElementById('pay-exit-wrap');
+        if (payExitWrap) payExitWrap.classList.add('hidden');
         if (payExitRadio && payExitRadio.checked && payCashRadio) payCashRadio.checked = true;
+        const payCardLbl = document.getElementById('pay-card-label');
+        if (payCardLbl) payCardLbl.textContent = currentLang === 'uz' ? "Kuryerda terminal" : "Терминал у курьера";
         hideCartError();
         renderCartDrawerItems();
       });
@@ -1854,7 +1858,11 @@ try {
         deliveryType = 'pickup';
         if (addrWrap) addrWrap.classList.add('hidden');
         if (tableWrap) tableWrap.classList.add('hidden');
+        const payExitWrap = document.getElementById('pay-exit-wrap');
+        if (payExitWrap) payExitWrap.classList.add('hidden');
         if (payExitRadio && payExitRadio.checked && payCashRadio) payCashRadio.checked = true;
+        const payCardLbl = document.getElementById('pay-card-label');
+        if (payCardLbl) payCardLbl.textContent = currentLang === 'uz' ? "Kassada terminal" : "Терминал на кассе";
         hideCartError();
         renderCartDrawerItems();
       });
@@ -1863,6 +1871,8 @@ try {
           deliveryType = 'dine_in';
           if (addrWrap) addrWrap.classList.add('hidden');
           if (tableWrap) tableWrap.classList.remove('hidden');
+          const payExitWrap = document.getElementById('pay-exit-wrap');
+          if (payExitWrap) payExitWrap.classList.remove('hidden');
           if (payExitRadio) payExitRadio.checked = true;
           hideCartError();
           renderCartDrawerItems();
@@ -2026,9 +2036,11 @@ try {
     const discountAmount = window.activePromoRate > 0 ? Math.round(subtotal * window.activePromoRate) : 0;
     const afterDiscount = Math.max(0, subtotal - discountAmount);
     const isDelivery = deliveryType === 'delivery';
+    const isDineIn = deliveryType === 'dine_in';
+    const serviceFee = isDineIn ? Math.round(afterDiscount * 0.10) : 0;
     const freeThreshold = 100000;
     const deliveryFee = (isDelivery && afterDiscount < freeThreshold) ? 10000 : 0;
-    const grandTotal = afterDiscount + deliveryFee;
+    const grandTotal = afterDiscount + deliveryFee + serviceFee;
 
     const discRow = document.getElementById('cart-discount-row');
     const discCodeLbl = document.getElementById('cart-promo-code-lbl');
@@ -2040,6 +2052,17 @@ try {
         if (discValEl) discValEl.textContent = `-${discountAmount.toLocaleString('ru-RU')} ${dict.currency}`;
       } else {
         discRow.classList.add('hidden');
+      }
+    }
+
+    const servFeeRow = document.getElementById('cart-service-fee-row');
+    const servFeeVal = document.getElementById('cart-service-fee-val');
+    if (servFeeRow) {
+      if (isDineIn && serviceFee > 0) {
+        servFeeRow.classList.remove('hidden');
+        if (servFeeVal) servFeeVal.textContent = `+${serviceFee.toLocaleString('ru-RU')} ${dict.currency}`;
+      } else {
+        servFeeRow.classList.add('hidden');
       }
     }
 
@@ -2230,11 +2253,12 @@ try {
       address: address,
       comment: comment,
       payment_method: paymentMethod,
-      payment_status: (currentDeliveryType === "dine_in" && paymentMethod === "unpaid") ? "pending" : "pending",
+      payment_status: (currentDeliveryType === "dine_in" && paymentMethod === "unpaid") ? "pending" : (paymentMethod === "online" ? "awaiting_confirmation" : "pending"),
       promo_code: window.activePromoCode || "",
       discount: discountVal,
       source: isTgMiniApp ? "tg_miniapp" : (window.Capacitor ? "android_app" : "web"),
       user_id: tgUserId,
+      append_if_active: currentDeliveryType === "dine_in",
       items: cart.map((cartItem) => {
         const resolved = resolveDishById(cartItem.id);
         return {

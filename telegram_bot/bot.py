@@ -302,10 +302,19 @@ def init_and_migrate_db() -> None:
             "discount": "INTEGER DEFAULT 0",
             "promo_code": "TEXT DEFAULT ''",
             "delivery_fee": "INTEGER DEFAULT 0",
+            "service_fee_percent": "INTEGER DEFAULT 0",
+            "service_fee": "INTEGER DEFAULT 0",
             "total": "INTEGER DEFAULT 0",
             "source": "TEXT DEFAULT 'web'",
             "payment_method": "TEXT DEFAULT 'cash'",
             "payment_status": "TEXT DEFAULT 'pending'",
+            "waiter_name": "TEXT DEFAULT ''",
+            "kitchen_status": "TEXT DEFAULT 'waiting'",
+            "delivery_mode": "TEXT DEFAULT 'own_courier'",
+            "courier_name": "TEXT DEFAULT ''",
+            "courier_phone": "TEXT DEFAULT ''",
+            "courier_paid_upfront": "INTEGER DEFAULT 0",
+            "cancel_reason": "TEXT DEFAULT ''",
             "group_message_id": "INTEGER DEFAULT NULL",
         }
         for col_name, col_def in migrations.items():
@@ -349,18 +358,27 @@ def serialize_order_row(row: sqlite3.Row) -> Dict[str, Any]:
         "discount": discount_val,
         "promo_code": promo_val,
         "delivery_fee": row["delivery_fee"] or 0,
+        "service_fee_percent": int(row["service_fee_percent"] or 0) if "service_fee_percent" in row_keys else 0,
+        "service_fee": int(row["service_fee"] or 0) if "service_fee" in row_keys else 0,
         "total": total_val,
         "total_amount": total_val,
         "source": row["source"] or "web",
         "payment_method": row["payment_method"] if "payment_method" in row_keys else "cash",
         "payment_status": row["payment_status"] if "payment_status" in row_keys else "pending",
+        "waiter_name": str(row["waiter_name"] or "") if "waiter_name" in row_keys else "",
+        "kitchen_status": str(row["kitchen_status"] or "waiting") if "kitchen_status" in row_keys else "waiting",
+        "delivery_mode": str(row["delivery_mode"] or "own_courier") if "delivery_mode" in row_keys else "own_courier",
+        "courier_name": str(row["courier_name"] or "") if "courier_name" in row_keys else "",
+        "courier_phone": str(row["courier_phone"] or "") if "courier_phone" in row_keys else "",
+        "courier_paid_upfront": int(row["courier_paid_upfront"] or 0) if "courier_paid_upfront" in row_keys else 0,
+        "cancel_reason": str(row["cancel_reason"] or "") if "cancel_reason" in row_keys else "",
         "group_message_id": row["group_message_id"] if "group_message_id" in row_keys else None,
     }
 # =====================================================================
 # Izoh
 # =====================================================================
 PHONE_RE = re.compile(r"^\+?[0-9\s\-\(\)]{7,20}$")
-def validate_and_build_order(payload: Dict[str, Any], default_source: str = "web") -> Dict[str, Any]:
+def validate_and_build_order(payload: Dict[str, Any], default_source: str = "web", is_staff: bool = False) -> Dict[str, Any]:
     customer_name = str(payload.get("customer_name") or payload.get("name") or "").strip()
     phone = str(payload.get("phone") or "").strip()
     delivery_type = str(payload.get("delivery_type") or "delivery").strip().lower()
@@ -450,25 +468,52 @@ def validate_and_build_order(payload: Dict[str, Any], default_source: str = "web
         delivery_fee = 0 if (FREE_DELIVERY_FROM > 0 and discounted_subtotal >= FREE_DELIVERY_FROM) else DELIVERY_FEE
     else:
         delivery_fee = 0
-    total = discounted_subtotal + delivery_fee
+
+    service_fee_percent = 10 if delivery_type == "dine_in" else 0
+    service_fee = int(round(discounted_subtotal * service_fee_percent / 100)) if service_fee_percent > 0 else 0
+    total = discounted_subtotal + delivery_fee + service_fee
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
     raw_pay_m = str(payload.get("payment_method") or "cash").strip().lower()
-    if raw_pay_m in ("terminal", "humo", "uzcard"):
-        raw_pay_m = "card"
+    if raw_pay_m in ("card_terminal", "terminal_courier", "courier_terminal"):
+        payment_method = "card_terminal"
+    elif raw_pay_m in ("terminal", "humo", "uzcard"):
+        payment_method = "card"
     elif raw_pay_m in ("click", "payme", "online"):
-        raw_pay_m = "online"
+        payment_method = "online"
     elif raw_pay_m in ("unpaid", "postpaid", "exit", "chiqishda"):
-        raw_pay_m = "unpaid"
+        payment_method = "unpaid"
     elif delivery_type == "dine_in" and raw_pay_m not in ("card", "online"):
-        raw_pay_m = "unpaid"
-    payment_method = raw_pay_m if raw_pay_m in ("cash", "card", "online", "unpaid") else ("unpaid" if delivery_type == "dine_in" else "cash")
+        payment_method = "unpaid"
+    else:
+        payment_method = "cash"
 
-    raw_pay_st = str(payload.get("payment_status") or ("pending" if payment_method == "unpaid" else "pending")).strip().lower()
-    payment_status = "pending" if payment_method == "unpaid" else (raw_pay_st if raw_pay_st in ("pending", "paid") else "pending")
+    if not is_staff:
+        # 1.1: agar so'rov ommaviy kelsa (is_staff=False), payment_status va status majburiy yangilanadi
+        initial_status = "new"
+        payment_status = "awaiting_confirmation" if payment_method == "online" else "pending"
+    else:
+        raw_pay_st = str(payload.get("payment_status") or ("pending" if payment_method == "unpaid" else "pending")).strip().lower()
+        payment_status = "pending" if payment_method == "unpaid" else (raw_pay_st if raw_pay_st in ("pending", "paid", "awaiting_confirmation") else "pending")
+        raw_st = str(payload.get("status") or "").strip().lower()
+        if raw_st in VALID_STATUSES:
+            initial_status = raw_st
+        else:
+            initial_status = "cooking" if (delivery_type == "dine_in" and source == "kassa") else "new"
 
-    initial_status = str(payload.get("status") or "").strip().lower()
-    if initial_status not in VALID_STATUSES:
-        initial_status = "cooking" if (delivery_type == "dine_in" and source == "kassa") else "new"
+    kitchen_status = "cooking" if initial_status == "cooking" else "waiting"
+    waiter_name = str(payload.get("waiter_name") or "").strip()
+    delivery_mode = str(payload.get("delivery_mode") or "own_courier").strip().lower()
+    if delivery_mode not in ("own_courier", "external_buyout"):
+        delivery_mode = "own_courier"
+    courier_name = str(payload.get("courier_name") or "").strip()
+    courier_phone = str(payload.get("courier_phone") or "").strip()
+    courier_paid_upfront = 1 if payload.get("courier_paid_upfront") in (1, True, "1", "true") else 0
+    cancel_reason = str(payload.get("cancel_reason") or "").strip()
+
+    if courier_paid_upfront and is_staff:
+        payment_status = "paid"
+        payment_method = "cash"
 
     return {
         "user_id": int(user_id) if str(user_id or "").isdigit() else None,
@@ -486,10 +531,19 @@ def validate_and_build_order(payload: Dict[str, Any], default_source: str = "web
         "discount": discount,
         "promo_code": promo_code if discount > 0 else "",
         "delivery_fee": delivery_fee,
+        "service_fee_percent": service_fee_percent,
+        "service_fee": service_fee,
         "total": total,
         "source": source,
         "payment_method": payment_method,
         "payment_status": payment_status,
+        "waiter_name": waiter_name,
+        "kitchen_status": kitchen_status,
+        "delivery_mode": delivery_mode,
+        "courier_name": courier_name,
+        "courier_phone": courier_phone,
+        "courier_paid_upfront": courier_paid_upfront,
+        "cancel_reason": cancel_reason,
     }
 def save_order_transactional(order_dict: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
     """
@@ -517,9 +571,12 @@ def save_order_transactional(order_dict: Dict[str, Any]) -> tuple[Dict[str, Any]
                     user_id, order_data, total_price, status, created_at,
                     idempotency_key, created_at_utc, updated_at_utc,
                     customer_name, phone, delivery_type, address, comment,
-                    items_json, subtotal, discount, promo_code, delivery_fee, total, source,
-                    payment_method, payment_status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    items_json, subtotal, discount, promo_code, delivery_fee,
+                    service_fee_percent, service_fee,
+                    total, source, payment_method, payment_status,
+                    waiter_name, kitchen_status, delivery_mode,
+                    courier_name, courier_phone, courier_paid_upfront, cancel_reason
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     order_dict["user_id"],
@@ -540,10 +597,19 @@ def save_order_transactional(order_dict: Dict[str, Any]) -> tuple[Dict[str, Any]
                     order_dict.get("discount", 0),
                     order_dict.get("promo_code", ""),
                     order_dict["delivery_fee"],
+                    order_dict.get("service_fee_percent", 0),
+                    order_dict.get("service_fee", 0),
                     order_dict["total"],
                     order_dict["source"],
                     order_dict.get("payment_method", "cash"),
                     order_dict.get("payment_status", "pending"),
+                    order_dict.get("waiter_name", ""),
+                    order_dict.get("kitchen_status", "waiting"),
+                    order_dict.get("delivery_mode", "own_courier"),
+                    order_dict.get("courier_name", ""),
+                    order_dict.get("courier_phone", ""),
+                    order_dict.get("courier_paid_upfront", 0),
+                    order_dict.get("cancel_reason", ""),
                 ),
             )
             order_id = cur.lastrowid
@@ -564,6 +630,10 @@ def append_items_to_order_transactional(order_id: int, new_items: List[Dict[str,
                 conn.rollback()
                 raise ValueError("Buyurtma topilmadi / Заказ не найден.")
 
+            if row["status"] in ("completed", "cancelled"):
+                conn.rollback()
+                raise ValueError("Yopilgan yoki bekor qilingan buyurtmaga taom qo'shib bo'lmaydi")
+
             existing_items = []
             try:
                 existing_items = json.loads(row["items_json"] or "[]")
@@ -576,7 +646,12 @@ def append_items_to_order_transactional(order_id: int, new_items: List[Dict[str,
             new_subtotal = sum(int(it.get("price", 0)) * int(it.get("qty", 1)) for it in existing_items)
             discount_val = int(row["discount"] or 0)
             delivery_fee_val = int(row["delivery_fee"] or 0)
-            new_total = max(0, new_subtotal - discount_val) + delivery_fee_val
+            discounted = max(0, new_subtotal - discount_val)
+
+            row_keys = set(row.keys())
+            fee_pct = int(row["service_fee_percent"] if ("service_fee_percent" in row_keys and row["service_fee_percent"] is not None) else (10 if row["delivery_type"] == "dine_in" else 0))
+            new_service_fee = int(round(discounted * fee_pct / 100)) if fee_pct > 0 else 0
+            new_total = discounted + delivery_fee_val + new_service_fee
 
             now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             items_json = json.dumps(existing_items, ensure_ascii=False)
@@ -589,6 +664,7 @@ def append_items_to_order_transactional(order_id: int, new_items: List[Dict[str,
 
             # Yangi taom qo'shilgach, oshxona statusi yangilanadi (cooking)
             new_status = "cooking" if row["status"] not in ("completed", "cancelled") else row["status"]
+            new_kitchen_status = "cooking"
 
             conn.execute(
                 """
@@ -596,14 +672,16 @@ def append_items_to_order_transactional(order_id: int, new_items: List[Dict[str,
                     order_data = ?,
                     items_json = ?,
                     subtotal = ?,
+                    service_fee = ?,
                     total = ?,
                     total_price = ?,
                     comment = ?,
                     status = ?,
+                    kitchen_status = ?,
                     updated_at_utc = ?
                 WHERE id = ?
                 """,
-                (summary_text, items_json, new_subtotal, new_total, new_total, updated_comment, new_status, now_utc, order_id),
+                (summary_text, items_json, new_subtotal, new_service_fee, new_total, new_total, updated_comment, new_status, new_kitchen_status, now_utc, order_id),
             )
             updated_row = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
             conn.commit()
@@ -615,9 +693,11 @@ def append_items_to_order_transactional(order_id: int, new_items: List[Dict[str,
 def pay_and_complete_order_transactional(order_id: int, payment_method: str = "cash", operator: str = "admin") -> Dict[str, Any]:
     """Chiqishda to'lovni qabul qilib, buyurtmani to'langan va yakunlangan holatga o'tkazadi."""
     pm_raw = str(payment_method or "cash").strip().lower()
-    if pm_raw in ("click", "payme", "online"):
+    if pm_raw in ("card_terminal", "terminal"):
+        norm_method = "card_terminal"
+    elif pm_raw in ("click", "payme", "online"):
         norm_method = "online"
-    elif pm_raw in ("card", "terminal", "uzcard", "humo"):
+    elif pm_raw in ("card", "uzcard", "humo"):
         norm_method = "card"
     else:
         norm_method = "cash"
@@ -629,17 +709,31 @@ def pay_and_complete_order_transactional(order_id: int, payment_method: str = "c
             if not row:
                 conn.rollback()
                 raise ValueError("Buyurtma topilmadi.")
+
+            if row["status"] == "cancelled":
+                conn.rollback()
+                raise ValueError("Bekor qilingan buyurtmaga to'lov qabul qilib bo'lmaydi")
+
+            if row["payment_status"] == "paid":
+                conn.rollback()
+                res = serialize_order_row(row)
+                res["already_paid"] = True
+                return res
+
             now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            row_keys = set(row.keys())
+            kitchen_st = "served" if row["delivery_type"] == "dine_in" else (row["kitchen_status"] if "kitchen_status" in row_keys else "ready")
             conn.execute(
                 """
                 UPDATE orders SET
                     status = 'completed',
                     payment_status = 'paid',
                     payment_method = ?,
+                    kitchen_status = ?,
                     updated_at_utc = ?
                 WHERE id = ?
                 """,
-                (norm_method, now_utc, order_id),
+                (norm_method, kitchen_st, now_utc, order_id),
             )
             updated_row = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
             conn.commit()
@@ -679,10 +773,14 @@ def format_order_telegram_html(order: Dict[str, Any]) -> str:
         lines.append(f"{idx}. {iname} × {iqty} = <b>{iline:,} so'm</b>".replace(",", " "))
     subtot = int(order.get("subtotal", 0))
     dfee = int(order.get("delivery_fee", 0))
+    sfee = int(order.get("service_fee", 0))
+    sfee_pct = int(order.get("service_fee_percent", 0))
     tot = int(order.get("total", 0))
     raw_pm = str(order.get("payment_method") or "cash").lower()
     pay_st = str(order.get("payment_status") or "pending").lower()
-    if raw_pm == "card":
+    if raw_pm == "card_terminal":
+        pay_label = "💳 Kuryerda terminal (Карта курьеру)"
+    elif raw_pm == "card":
         pay_label = "💳 Karta / Terminal (Карта)"
     elif raw_pm in ("online", "click", "payme"):
         pay_label = "📱 Click / Payme (Онлайн)"
@@ -691,10 +789,19 @@ def format_order_telegram_html(order: Dict[str, Any]) -> str:
     else:
         pay_label = "💵 Naqd pul (Наличные)"
 
-    st_badge = "🟢 To'langan" if pay_st == "paid" else "🟡 To'lanmagan (Chiqishda to'lanadi)"
+    if pay_st == "paid":
+        st_badge = "🟢 To'langan"
+    elif pay_st == "awaiting_confirmation":
+        st_badge = "⏳ Tekshirilmoqda (Click/Payme)"
+    else:
+        st_badge = "🟡 To'lanmagan (Chiqishda to'lanadi)"
+
     lines.append("")
     lines.append(f"💵 <b>Taomlar summasi:</b> {subtot:,} so'm".replace(",", " "))
-    lines.append(f"🛵 <b>Yetkazib berish:</b> {dfee:,} so'm".replace(",", " "))
+    if sfee > 0:
+        lines.append(f"☕ <b>Xizmat haqi ({sfee_pct}%):</b> {sfee:,} so'm".replace(",", " "))
+    if dfee > 0 or order.get("delivery_type") == "delivery":
+        lines.append(f"🛵 <b>Yetkazib berish:</b> {dfee:,} so'm".replace(",", " "))
     lines.append(f"💳 <b>To'lov turi:</b> {pay_label} · <b>{st_badge}</b>")
     lines.append(f"💰 <b>JAMI TO'LOV: {tot:,} so'm</b>".replace(",", " "))
     return chr(10).join(lines)
@@ -789,10 +896,14 @@ async def send_telegram_customer_receipt(bot_instance: Optional[Bot], order: Dic
     
     subtot = int(order.get("subtotal", 0))
     dfee = int(order.get("delivery_fee", 0))
+    sfee = int(order.get("service_fee", 0))
+    sfee_pct = int(order.get("service_fee_percent", 0))
     tot = int(order.get("total", 0))
     raw_pm = str(order.get("payment_method") or "cash").lower()
     pay_st = str(order.get("payment_status") or "pending").lower()
-    if raw_pm == "card":
+    if raw_pm == "card_terminal":
+        pay_label = "💳 Kuryerda terminal (Карта курьеру)"
+    elif raw_pm == "card":
         pay_label = "💳 Karta / Terminal (Карта)"
     elif raw_pm in ("online", "click", "payme"):
         pay_label = "📱 Click / Payme (Онлайн)"
@@ -801,10 +912,19 @@ async def send_telegram_customer_receipt(bot_instance: Optional[Bot], order: Dic
     else:
         pay_label = "💵 Naqd pul (Наличные)"
 
-    st_badge = "🟢 To'langan" if pay_st == "paid" else "🟡 To'lanmagan (Chiqishda to'lanadi)"
+    if pay_st == "paid":
+        st_badge = "🟢 To'langan"
+    elif pay_st == "awaiting_confirmation":
+        st_badge = "⏳ Tekshirilmoqda (Click/Payme)"
+    else:
+        st_badge = "🟡 To'lanmagan (Chiqishda to'lanadi)"
+
     lines.append("")
     lines.append(f"💵 <b>Taomlar summasi:</b> {subtot:,} so'm".replace(",", " "))
-    lines.append(f"🛵 <b>Yetkazib berish:</b> {dfee:,} so'm".replace(",", " "))
+    if sfee > 0:
+        lines.append(f"☕ <b>Xizmat haqi ({sfee_pct}%):</b> {sfee:,} so'm".replace(",", " "))
+    if dfee > 0 or order.get("delivery_type") == "delivery":
+        lines.append(f"🛵 <b>Yetkazib berish:</b> {dfee:,} so'm".replace(",", " "))
     lines.append(f"💳 <b>To'lov turi:</b> {pay_label} · <b>{st_badge}</b>")
     lines.append(f"💰 <b>JAMI TO'LOV: {tot:,} so'm</b>".replace(",", " "))
     lines.append("")
@@ -1159,6 +1279,10 @@ async def handle_order_append_logic(request: web.Request, order_id: int, payload
     return web.json_response({"ok": True, "order": updated_order, "added_items": validated_new_items})
 
 async def api_order_append(request: web.Request) -> web.Response:
+    if not is_admin_authenticated(request):
+        return web.json_response({"ok": False, "error": "Ruxsat berilmagan / Unauthorized."}, status=401)
+    if not check_csrf_protection(request):
+        return web.json_response({"ok": False, "error": "Sessiya xavfsizlik tekshiruvi / CSRF check failed."}, status=403)
     order_id = request.match_info.get("id", "")
     if not order_id.isdigit():
         return web.json_response({"ok": False, "error": "Noto'g'ri buyurtma ID."}, status=400)
@@ -1169,6 +1293,10 @@ async def api_order_append(request: web.Request) -> web.Response:
     return await handle_order_append_logic(request, int(order_id), payload)
 
 async def api_order_pay(request: web.Request) -> web.Response:
+    if not is_admin_authenticated(request):
+        return web.json_response({"ok": False, "error": "Ruxsat berilmagan / Unauthorized."}, status=401)
+    if not check_csrf_protection(request):
+        return web.json_response({"ok": False, "error": "Sessiya xavfsizlik tekshiruvi / CSRF check failed."}, status=403)
     order_id = request.match_info.get("id", "")
     if not order_id.isdigit():
         return web.json_response({"ok": False, "error": "Noto'g'ri buyurtma ID."}, status=400)
@@ -1177,7 +1305,9 @@ async def api_order_pay(request: web.Request) -> web.Response:
     except Exception:
         body = {}
     pay_m = str(body.get("payment_method") or "cash").strip().lower()
-    if pay_m in ("terminal", "humo", "uzcard"):
+    if pay_m in ("card_terminal", "terminal"):
+        pay_m = "card_terminal"
+    elif pay_m in ("card", "humo", "uzcard"):
         pay_m = "card"
     elif pay_m in ("click", "payme", "online"):
         pay_m = "online"
@@ -1188,7 +1318,7 @@ async def api_order_pay(request: web.Request) -> web.Response:
     try:
         updated_order = pay_and_complete_order_transactional(int(order_id), payment_method=pay_m, operator=operator)
     except ValueError as ve:
-        return web.json_response({"ok": False, "error": str(ve)}, status=404)
+        return web.json_response({"ok": False, "error": str(ve)}, status=400)
 
     await broadcast_sse_event("order_updated", {"order": updated_order})
 
@@ -1214,8 +1344,14 @@ async def api_create_order(request: web.Request) -> web.Response:
     except Exception:
         return web.json_response({"ok": False, "error": "Noto'g'ri JSON so'rov / Некорректный запрос."}, status=400)
 
-    # 1. Agar mavjud stol buyurtmasiga qo'shimcha taom qo'shish so'ralgan bo'lsa
+    is_staff = is_admin_authenticated(request)
     append_order_id = payload.get("append_to_order_id")
+
+    # 1.1: ruxsat etilmagan mijozlar boshqa ID ga to'g'ridan-to'g'ri qo'sha olmaydi
+    if append_order_id and not is_staff:
+        return web.json_response({"ok": False, "error": "Faqat xodimlar buyurtmaga to'g'ridan-to'g'ri qo'sha oladi."}, status=403)
+
+    # mijoz uchun append_if_active faqat ochiq dine_in buyurtmasiga do-zakaz beradi
     if not append_order_id and payload.get("delivery_type") == "dine_in" and payload.get("append_if_active"):
         tbl_addr = str(payload.get("address") or payload.get("customer_name") or "").strip()
         if tbl_addr:
@@ -1232,7 +1368,7 @@ async def api_create_order(request: web.Request) -> web.Response:
         return await handle_order_append_logic(request, int(append_order_id), payload)
 
     try:
-        order_dict = validate_and_build_order(payload, default_source="web")
+        order_dict = validate_and_build_order(payload, default_source="web", is_staff=is_staff)
         saved_order, is_new = save_order_transactional(order_dict)
     except ValueError as ve:
         return web.json_response({"ok": False, "error": str(ve)}, status=400)
@@ -1433,6 +1569,12 @@ async def api_admin_update_status(request: web.Request) -> web.Response:
     new_status = str(body.get("status") or "").strip().lower()
     new_pay_st = str(body.get("payment_status") or "").strip().lower()
     new_pay_m = str(body.get("payment_method") or "").strip().lower()
+    new_kitchen_st = str(body.get("kitchen_status") or "").strip().lower()
+    new_deliv_mode = str(body.get("delivery_mode") or "").strip().lower()
+    new_courier_name = str(body.get("courier_name") or "").strip()
+    new_courier_phone = str(body.get("courier_phone") or "").strip()
+    courier_paid_upfront = body.get("courier_paid_upfront")
+    cancel_reason = str(body.get("cancel_reason") or "").strip()
 
     if new_status and new_status not in VALID_STATUSES:
         return web.json_response({"ok": False, "error": "Noto'g'ri buyurtma holati / Недопустимый статус."}, status=400)
@@ -1445,7 +1587,7 @@ async def api_admin_update_status(request: web.Request) -> web.Response:
             return web.json_response({"ok": False, "error": "Заказ не найден."}, status=404)
 
         current_status = str(row["status"] or "new").lower()
-        if not new_status and not new_pay_st and not new_pay_m:
+        if not new_status and not new_pay_st and not new_pay_m and not new_kitchen_st and not new_deliv_mode and not new_courier_name and not new_courier_phone and courier_paid_upfront is None and not cancel_reason:
             conn.rollback()
             return web.json_response({"ok": True, "order": serialize_order_row(row)})
 
@@ -1460,25 +1602,61 @@ async def api_admin_update_status(request: web.Request) -> web.Response:
         set_params = [now_utc]
 
         target_status = new_status
-        if new_pay_st == "paid" and not target_status:
+        if new_kitchen_st == "ready" and not target_status:
+            target_status = "ready"
+        elif new_pay_st == "paid" and not target_status:
             target_status = "completed"
 
         if target_status and target_status in VALID_STATUSES:
             set_clauses.append("status = ?")
             set_params.append(target_status)
+            if target_status == "ready" and not new_kitchen_st:
+                new_kitchen_st = "ready"
+            elif target_status == "cooking" and not new_kitchen_st:
+                new_kitchen_st = "cooking"
 
-        if new_pay_st in ("pending", "paid"):
+        if new_kitchen_st in ("waiting", "cooking", "ready", "served"):
+            set_clauses.append("kitchen_status = ?")
+            set_params.append(new_kitchen_st)
+
+        if new_deliv_mode in ("own_courier", "external_buyout"):
+            set_clauses.append("delivery_mode = ?")
+            set_params.append(new_deliv_mode)
+
+        if new_courier_name:
+            set_clauses.append("courier_name = ?")
+            set_params.append(new_courier_name)
+
+        if new_courier_phone:
+            set_clauses.append("courier_phone = ?")
+            set_params.append(new_courier_phone)
+
+        if courier_paid_upfront is not None:
+            cpu_val = 1 if courier_paid_upfront in (1, True, "1", "true") else 0
+            set_clauses.append("courier_paid_upfront = ?")
+            set_params.append(cpu_val)
+            if cpu_val == 1:
+                set_clauses.append("payment_status = 'paid'")
+                set_clauses.append("payment_method = 'cash'")
+
+        if cancel_reason:
+            set_clauses.append("cancel_reason = ?")
+            set_params.append(cancel_reason)
+
+        if new_pay_st in ("pending", "paid", "awaiting_confirmation") and courier_paid_upfront != 1:
             set_clauses.append("payment_status = ?")
             set_params.append(new_pay_st)
 
-        if new_pay_m:
-            if new_pay_m in ("terminal", "humo", "uzcard"):
+        if new_pay_m and courier_paid_upfront != 1:
+            if new_pay_m in ("card_terminal", "courier_terminal"):
+                new_pay_m = "card_terminal"
+            elif new_pay_m in ("terminal", "humo", "uzcard"):
                 new_pay_m = "card"
             elif new_pay_m in ("click", "payme", "online"):
                 new_pay_m = "online"
             elif new_pay_m in ("unpaid", "postpaid", "exit", "chiqishda"):
                 new_pay_m = "unpaid"
-            if new_pay_m in ("cash", "card", "online", "unpaid"):
+            if new_pay_m in ("cash", "card", "card_terminal", "online", "unpaid"):
                 set_clauses.append("payment_method = ?")
                 set_params.append(new_pay_m)
 
@@ -1575,13 +1753,13 @@ async def api_admin_stats(request: web.Request) -> web.Response:
                 pay_m = str(r["payment_method"] or "cash").lower() if "payment_method" in row_keys else "cash"
                 comm = str(r["comment"] or "").lower()
 
-                if pay_st != "paid" and (pay_m == "unpaid" or r["delivery_type"] == "dine_in") and st != "completed":
+                if pay_st != "paid" and (pay_m in ("unpaid", "card_terminal") or r["delivery_type"] == "dine_in") and st != "completed":
                     unpaid_open_tables_revenue += tot
                     unpaid_open_tables_count += 1
-                else:
+                elif pay_st == "paid":
                     total_revenue += tot
                     valid_orders += 1
-                    if pay_m in ("card", "terminal", "humo", "uzcard") or any(k in comm for k in ("karta", "terminal", "card", "humo", "uzcard")):
+                    if pay_m in ("card", "terminal", "card_terminal", "humo", "uzcard") or any(k in comm for k in ("karta", "terminal", "card", "humo", "uzcard")):
                         card_revenue += tot
                     elif pay_m in ("online", "click", "payme") or any(k in comm for k in ("click", "payme", "online")):
                         online_revenue += tot

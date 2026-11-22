@@ -296,18 +296,64 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
   if (pathname === '/api/orders' && req.method === 'POST') {
     const appendId = body.append_to_order_id;
     if (appendId) {
+      if (!isAdminAuthed) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: "Faqat xodimlar to'g'ridan-to'g'ri buyurtma ID bo'yicha taom qo'shishi mumkin" }));
+        return;
+      }
       let target = mockOrders.find((o) => o.id === Number(appendId));
       if (target) {
+        if (target.status === 'completed' || target.status === 'cancelled') {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: "Yopilgan yoki bekor qilingan buyurtmaga taom qo'shib bo'lmaydi" }));
+          return;
+        }
         const newItems = Array.isArray(body.items) ? body.items : [];
         target.items = [...target.items, ...newItems];
         target.subtotal = target.items.reduce((s, it) => s + Number(it.price || 0) * Number(it.qty || 1), 0);
-        target.total = target.subtotal;
-        target.total_amount = target.subtotal;
-        target.status = 'cooking';
+        const disc = Number(target.discount || 0);
+        const afterDisc = Math.max(0, target.subtotal - disc);
+        const sfPercent = Number(target.service_fee_percent || (target.delivery_type === 'dine_in' ? 10 : 0));
+        target.service_fee_percent = sfPercent;
+        target.service_fee = Math.round(afterDisc * (sfPercent / 100));
+        target.total = afterDisc + target.service_fee + Number(target.delivery_fee || 0);
+        target.total_amount = target.total;
+        target.kitchen_status = 'cooking';
         target.updated_at_utc = new Date().toISOString();
         broadcastSSE('order_updated', { order: target, new_items: newItems });
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true, order: target, duplicate: false }));
+        return;
+      }
+    }
+
+    if (body.append_if_active && body.delivery_type === 'dine_in') {
+      const comm = String(body.comment || '');
+      const targetTable = (comm.match(/Stol:\s*([^\n,]+)/i) || [])[1];
+      const ph = String(body.phone || '').trim();
+      let activeOrder = mockOrders.find((o) => {
+        if (o.delivery_type !== 'dine_in') return false;
+        if (['completed', 'cancelled'].includes(o.status)) return false;
+        if (targetTable && String(o.comment || '').includes(targetTable)) return true;
+        if (ph && o.phone === ph) return true;
+        return false;
+      });
+      if (activeOrder) {
+        const newItems = Array.isArray(body.items) ? body.items : [];
+        activeOrder.items = [...activeOrder.items, ...newItems];
+        activeOrder.subtotal = activeOrder.items.reduce((s, it) => s + Number(it.price || 0) * Number(it.qty || 1), 0);
+        const disc = Number(activeOrder.discount || 0);
+        const afterDisc = Math.max(0, activeOrder.subtotal - disc);
+        const sfPercent = Number(activeOrder.service_fee_percent || 10);
+        activeOrder.service_fee_percent = sfPercent;
+        activeOrder.service_fee = Math.round(afterDisc * (sfPercent / 100));
+        activeOrder.total = afterDisc + activeOrder.service_fee + Number(activeOrder.delivery_fee || 0);
+        activeOrder.total_amount = activeOrder.total;
+        activeOrder.kitchen_status = 'cooking';
+        activeOrder.updated_at_utc = new Date().toISOString();
+        broadcastSSE('order_updated', { order: activeOrder, new_items: newItems });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, order: activeOrder, duplicate: false, appended: true }));
         return;
       }
     }
@@ -320,13 +366,17 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
     const discount = rate > 0 ? Math.round(subtotal * rate) : Number(body.discount || 0);
     const afterDisc = Math.max(0, subtotal - discount);
     const delivType = String(body.delivery_type || 'delivery').toLowerCase();
+    const serviceFeePercent = delivType === 'dine_in' ? 10 : 0;
+    const serviceFee = Math.round(afterDisc * (serviceFeePercent / 100));
     const delivFee = delivType === 'delivery' ? (afterDisc >= 100000 ? 0 : 10000) : 0;
-    const total = afterDisc + delivFee;
+    const total = afterDisc + serviceFee + delivFee;
     const nowUtc = new Date().toISOString();
     const rawPayMethod = String(body.payment_method || 'cash').trim().toLowerCase();
     let paymentMethod = 'cash';
     if (rawPayMethod === 'click' || rawPayMethod === 'payme' || rawPayMethod === 'online') {
       paymentMethod = 'online';
+    } else if (rawPayMethod === 'card_terminal') {
+      paymentMethod = 'card_terminal';
     } else if (['card', 'terminal', 'humo', 'uzcard'].includes(rawPayMethod)) {
       paymentMethod = 'card';
     } else if (['unpaid', 'postpaid', 'exit', 'chiqishda'].includes(rawPayMethod) || (delivType === 'dine_in' && rawPayMethod !== 'cash')) {
@@ -335,7 +385,13 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       paymentMethod = rawPayMethod === 'cash' && body.source === 'kassa' && body.payment_status === 'paid' ? 'cash' : 'unpaid';
     }
 
-    const payStatus = (paymentMethod === 'unpaid') ? 'pending' : (String(body.payment_status || 'pending').toLowerCase());
+    let payStatus = (paymentMethod === 'unpaid') ? 'pending' : (String(body.payment_status || 'pending').toLowerCase());
+    let orderStatus = body.status || (delivType === 'dine_in' && body.source === 'kassa' ? 'cooking' : 'new');
+
+    if (!isAdminAuthed) {
+      payStatus = 'pending';
+      orderStatus = 'new';
+    }
 
     const order = {
       id,
@@ -353,10 +409,19 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       subtotal,
       discount,
       promo_code: promoCode,
+      service_fee_percent: serviceFeePercent,
+      service_fee: serviceFee,
       delivery_fee: delivFee,
       total,
       total_amount: total,
-      status: body.status || (delivType === 'dine_in' && body.source === 'kassa' ? 'cooking' : 'new'),
+      status: orderStatus,
+      waiter_name: body.waiter_name || '',
+      kitchen_status: body.kitchen_status || (delivType === 'dine_in' && body.source === 'kassa' ? 'cooking' : 'waiting'),
+      delivery_mode: body.delivery_mode || 'own_courier',
+      courier_name: body.courier_name || '',
+      courier_phone: body.courier_phone || '',
+      courier_paid_upfront: body.courier_paid_upfront ? 1 : 0,
+      cancel_reason: '',
       created_at_utc: nowUtc,
       updated_at_utc: nowUtc,
     };
@@ -370,6 +435,11 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
 
   const orderAppendMatch = pathname.match(/^\/api\/(?:admin\/)?orders\/(\d+)\/append$/);
   if (orderAppendMatch && req.method === 'POST') {
+    if (!isAdminAuthed) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Avtorizatsiya talab qilinadi' }));
+      return;
+    }
     const ordId = parseInt(orderAppendMatch[1], 10);
     let target = mockOrders.find((o) => o.id === ordId);
     if (!target) {
@@ -377,12 +447,22 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       res.end(JSON.stringify({ ok: false, error: 'Buyurtma topilmadi' }));
       return;
     }
+    if (target.status === 'completed' || target.status === 'cancelled') {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: "Yopilgan yoki bekor qilingan buyurtmaga taom qo'shib bo'lmaydi" }));
+      return;
+    }
     const newItems = Array.isArray(body.items) ? body.items : [];
     target.items = [...target.items, ...newItems];
     target.subtotal = target.items.reduce((s, it) => s + Number(it.price || 0) * Number(it.qty || 1), 0);
-    target.total = target.subtotal;
-    target.total_amount = target.subtotal;
-    target.status = 'cooking';
+    const disc = Number(target.discount || 0);
+    const afterDisc = Math.max(0, target.subtotal - disc);
+    const sfPercent = Number(target.service_fee_percent || (target.delivery_type === 'dine_in' ? 10 : 0));
+    target.service_fee_percent = sfPercent;
+    target.service_fee = Math.round(afterDisc * (sfPercent / 100));
+    target.total = afterDisc + target.service_fee + Number(target.delivery_fee || 0);
+    target.total_amount = target.total;
+    target.kitchen_status = 'cooking';
     target.updated_at_utc = new Date().toISOString();
     broadcastSSE('order_updated', { order: target, new_items: newItems });
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -392,6 +472,11 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
 
   const orderPayMatch = pathname.match(/^\/api\/(?:admin\/)?orders\/(\d+)\/pay$/);
   if (orderPayMatch && req.method === 'POST') {
+    if (!isAdminAuthed) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Avtorizatsiya talab qilinadi' }));
+      return;
+    }
     const ordId = parseInt(orderPayMatch[1], 10);
     let target = mockOrders.find((o) => o.id === ordId);
     if (!target) {
@@ -399,9 +484,19 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       res.end(JSON.stringify({ ok: false, error: 'Buyurtma topilmadi' }));
       return;
     }
+    if (target.status === 'cancelled') {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: "Bekor qilingan buyurtma to'lanmaydi" }));
+      return;
+    }
+    if (target.payment_status === 'paid') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, order: target, already_paid: true }));
+      return;
+    }
     const payM = String(body.payment_method || 'cash').toLowerCase();
     target.payment_status = 'paid';
-    target.payment_method = ['card', 'terminal', 'humo'].includes(payM) ? 'card' : (['online', 'click', 'payme'].includes(payM) ? 'online' : 'cash');
+    target.payment_method = payM === 'card_terminal' ? 'card_terminal' : (['card', 'terminal', 'humo'].includes(payM) ? 'card' : (['online', 'click', 'payme'].includes(payM) ? 'online' : 'cash'));
     target.status = 'completed';
     target.updated_at_utc = new Date().toISOString();
     broadcastSSE('order_updated', { order: target });
@@ -449,11 +544,21 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
     if (body.payment_status) target.payment_status = String(body.payment_status).toLowerCase();
     if (body.payment_method) {
       const pm = String(body.payment_method).toLowerCase();
-      target.payment_method = ['card', 'terminal', 'humo'].includes(pm) ? 'card' : (['online', 'click', 'payme'].includes(pm) ? 'online' : (pm === 'unpaid' ? 'unpaid' : 'cash'));
+      target.payment_method = pm === 'card_terminal' ? 'card_terminal' : (['card', 'terminal', 'humo'].includes(pm) ? 'card' : (['online', 'click', 'payme'].includes(pm) ? 'online' : (pm === 'unpaid' ? 'unpaid' : 'cash')));
+    }
+    if (body.kitchen_status) target.kitchen_status = String(body.kitchen_status).toLowerCase();
+    if (body.delivery_mode) target.delivery_mode = String(body.delivery_mode);
+    if (body.courier_name !== undefined) target.courier_name = String(body.courier_name);
+    if (body.courier_phone !== undefined) target.courier_phone = String(body.courier_phone);
+    if (body.courier_paid_upfront !== undefined) target.courier_paid_upfront = body.courier_paid_upfront ? 1 : 0;
+    if (body.cancel_reason !== undefined) target.cancel_reason = String(body.cancel_reason);
+    if (body.delivery_mode === 'external_buyout' && target.courier_paid_upfront) {
+      target.payment_status = 'paid';
+      target.payment_method = 'cash';
     }
     if (body.status) {
       target.status = String(body.status).toLowerCase();
-    } else if (body.payment_status === 'paid') {
+    } else if (body.payment_status === 'paid' && target.status !== 'delivering') {
       target.status = 'completed';
     }
     target.updated_at_utc = new Date().toISOString();
@@ -607,6 +712,7 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       return;
     }
     let totalRev = 0, cashRev = 0, cardRev = 0, onlineRev = 0, validCount = 0;
+    let unpaidOpenTablesCount = 0, unpaidOpenTablesRevenue = 0;
     const statusCounts = { new: 0, preparing: 0, cooking: 0, delivering: 0, completed: 0, cancelled: 0 };
     const dishMap = {};
 
@@ -614,12 +720,19 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       const st = String(o.status || 'new').toLowerCase();
       statusCounts[st] = (statusCounts[st] || 0) + 1;
       const tot = Number(o.total_amount || o.total || 0);
-      if (st !== 'cancelled') {
+      const isPaid = String(o.payment_status || '').toLowerCase() === 'paid';
+
+      if (o.delivery_type === 'dine_in' && !isPaid && !['completed', 'cancelled'].includes(st)) {
+        unpaidOpenTablesCount++;
+        unpaidOpenTablesRevenue += tot;
+      }
+
+      if (st !== 'cancelled' && isPaid) {
         totalRev += tot;
         validCount++;
         const payM = String(o.payment_method || '').toLowerCase();
         const comm = String(o.comment || '').toLowerCase();
-        if (payM === 'card' || comm.includes('card') || comm.includes('karta') || comm.includes('humo')) cardRev += tot;
+        if (payM === 'card' || payM === 'card_terminal' || comm.includes('card') || comm.includes('karta') || comm.includes('humo')) cardRev += tot;
         else if (payM === 'online' || comm.includes('click') || comm.includes('payme')) onlineRev += tot;
         else cashRev += tot;
 
@@ -648,6 +761,8 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
         cash_revenue: cashRev,
         card_revenue: cardRev,
         online_revenue: onlineRev,
+        unpaid_open_tables_count: unpaidOpenTablesCount,
+        unpaid_open_tables_revenue: unpaidOpenTablesRevenue,
         cash_in_total: cashInTotal,
         cash_out_total: cashOutTotal,
         cash_in_drawer: cashInDrawer,

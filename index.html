@@ -705,19 +705,19 @@
             Способ оплаты
           </label>
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-1.5" id="cart-payment-methods">
-            <label class="flex items-center gap-1.5 p-2 rounded border border-[#232424]/30 bg-white/50 cursor-pointer hover:border-[#EB2A2A]">
+            <label id="pay-cash-wrap" class="flex items-center gap-1.5 p-2 rounded border border-[#232424]/30 bg-white/50 cursor-pointer hover:border-[#EB2A2A]">
               <input type="radio" name="payment_choice" value="cash" id="pay-cash" checked class="accent-[#EB2A2A]">
               <span class="text-[12px] font-medium" data-i18n="pay_cash">Наличные</span>
             </label>
-            <label class="flex items-center gap-1.5 p-2 rounded border border-[#232424]/30 bg-white/50 cursor-pointer hover:border-[#EB2A2A]">
-              <input type="radio" name="payment_choice" value="card" id="pay-card" class="accent-[#EB2A2A]">
-              <span class="text-[12px] font-medium" data-i18n="pay_card">Терминал</span>
+            <label id="pay-card-wrap" class="flex items-center gap-1.5 p-2 rounded border border-[#232424]/30 bg-white/50 cursor-pointer hover:border-[#EB2A2A]">
+              <input type="radio" name="payment_choice" value="card_terminal" id="pay-card" class="accent-[#EB2A2A]">
+              <span class="text-[12px] font-medium" id="pay-card-label" data-i18n="pay_card">Терминал</span>
             </label>
-            <label class="flex items-center gap-1.5 p-2 rounded border border-[#232424]/30 bg-white/50 cursor-pointer hover:border-[#EB2A2A]">
+            <label id="pay-online-wrap" class="flex items-center gap-1.5 p-2 rounded border border-[#232424]/30 bg-white/50 cursor-pointer hover:border-[#EB2A2A]">
               <input type="radio" name="payment_choice" value="online" id="pay-online" class="accent-[#EB2A2A]">
               <span class="text-[12px] font-medium" data-i18n="pay_online">Click/Payme</span>
             </label>
-            <label id="pay-exit-wrap" class="flex items-center gap-1.5 p-2 rounded border border-[#232424]/30 bg-white/50 cursor-pointer hover:border-[#EB2A2A]">
+            <label id="pay-exit-wrap" class="hidden flex items-center gap-1.5 p-2 rounded border border-[#232424]/30 bg-white/50 cursor-pointer hover:border-[#EB2A2A]">
               <input type="radio" name="payment_choice" value="unpaid" id="pay-exit" class="accent-[#EB2A2A]">
               <span class="text-[12px] font-medium" data-i18n="pay_exit">При выходе</span>
             </label>
@@ -806,7 +806,12 @@
             <span id="cart-discount-val">-0 сум</span>
           </div>
 
-          <div class="flex justify-between">
+          <div id="cart-service-fee-row" class="flex justify-between text-[#1e40af] font-bold hidden">
+            <span>☕ Xizmat haqi (10%):</span>
+            <span id="cart-service-fee-val">+0 сум</span>
+          </div>
+
+          <div id="cart-delivery-fee-row" class="flex justify-between">
             <span class="opacity-75" data-i18n="cart_delivery_fee">Доставка (бесплатно от 100 000):</span>
             <span id="cart-delivery-fee-val" class="font-bold text-[#EB2A2A]">Бесплатно</span>
           </div>
