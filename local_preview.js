@@ -230,20 +230,45 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
     queryToken.startsWith('ac_jwt_');
 
   if (pathname === '/api/admin/login' && req.method === 'POST') {
-    const user = String(body.username || 'admin').trim();
-    const pass = String(body.password || '').trim();
-    const expectedPass = process.env.ADMIN_PASSWORD || 'admin123!';
-    if (!pass || (pass !== expectedPass && pass !== 'admin123!' && pass !== 'admin')) {
-      res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: false, error: 'Parol xato / Неверный пароль' }));
-      return;
+    const pin = String(body.pin || '').trim();
+    let user = 'admin';
+    let role = 'admin';
+
+    const STAFF_PINS = {
+      '7777': { role: 'admin', name: 'Egasi (Admin)' },
+      '1111': { role: 'cashier', name: 'Kassir' },
+      '2222': { role: 'waiter', name: 'Ofitsiant' },
+      '3333': { role: 'kitchen', name: 'Oshpaz' },
+      '4444': { role: 'courier', name: 'Kuryer' },
+    };
+
+    if (pin) {
+      if (STAFF_PINS[pin]) {
+        role = STAFF_PINS[pin].role;
+        user = STAFF_PINS[pin].name;
+      } else {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: "Noto'g'ri PIN-kod" }));
+        return;
+      }
+    } else {
+      user = String(body.username || 'admin').trim();
+      const pass = String(body.password || '').trim();
+      const expectedPass = process.env.ADMIN_PASSWORD || 'admin123!';
+      if (!pass || (pass !== expectedPass && pass !== 'admin123!' && pass !== 'admin')) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'Parol xato / Неверный пароль' }));
+        return;
+      }
+      role = 'admin';
     }
-    const token = 'ac_jwt_' + Buffer.from(`${user}:${Date.now()}`).toString('base64');
+
+    const token = 'ac_jwt_' + Buffer.from(`${role}:${user}:${Date.now()}`).toString('base64');
     res.writeHead(200, {
       'Content-Type': 'application/json',
       'Set-Cookie': `ac_admin_session=${token}; Path=/; HttpOnly; SameSite=Lax`,
     });
-    res.end(JSON.stringify({ ok: true, username: user, token }));
+    res.end(JSON.stringify({ ok: true, username: user, role, token }));
     return;
   }
 
@@ -259,8 +284,53 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       res.end(JSON.stringify({ ok: false, authenticated: false }));
       return;
     }
+    let role = 'admin';
+    let user = 'admin';
+    const authH = req.headers.authorization || '';
+    const cookH = req.headers.cookie || '';
+    let rawTok = authH.startsWith('Bearer ac_jwt_') ? authH.slice(14) : '';
+    if (!rawTok && cookH.includes('ac_admin_session=ac_jwt_')) {
+      const m = cookH.match(/ac_admin_session=ac_jwt_([^;]+)/);
+      if (m) rawTok = m[1];
+    }
+    if (rawTok) {
+      try {
+        const decoded = Buffer.from(rawTok, 'base64').toString('utf-8');
+        const parts = decoded.split(':');
+        if (parts.length >= 2) {
+          role = parts[0];
+          user = parts[1];
+        }
+      } catch (_) {}
+    }
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, authenticated: true, username: 'admin' }));
+    res.end(JSON.stringify({ ok: true, authenticated: true, username: user, role }));
+    return;
+  }
+
+  if (pathname === '/api/admin/backup') {
+    if (!isAdminAuthed) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Avtorizatsiya talab qilinadi' }));
+      return;
+    }
+    const isDownload = parsedReqUrl.query && parsedReqUrl.query.download === '1';
+    let dbPath = path.join(__dirname, 'telegram_bot', 'cafe_bot.db');
+    if (!fs.existsSync(dbPath)) {
+      dbPath = path.join(__dirname, 'cafe_bot.db');
+    }
+    if (isDownload && fs.existsSync(dbPath)) {
+      const stats = fs.statSync(dbPath);
+      res.writeHead(200, {
+        'Content-Type': 'application/x-sqlite3',
+        'Content-Length': stats.size,
+        'Content-Disposition': `attachment; filename="cafe_bot_${Date.now()}.db"`,
+      });
+      fs.createReadStream(dbPath).pipe(res);
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, message: 'Baza zaxira nusxasi yaratildi (Preview)' }));
     return;
   }
 
@@ -715,6 +785,7 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
     let unpaidOpenTablesCount = 0, unpaidOpenTablesRevenue = 0;
     const statusCounts = { new: 0, preparing: 0, cooking: 0, delivering: 0, completed: 0, cancelled: 0 };
     const dishMap = {};
+    const waiterMap = {};
 
     mockOrders.forEach((o) => {
       const st = String(o.status || 'new').toLowerCase();
@@ -736,6 +807,12 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
         else if (payM === 'online' || comm.includes('click') || comm.includes('payme')) onlineRev += tot;
         else cashRev += tot;
 
+        const w = o.waiter_name || 'Kassa / Umumiy';
+        if (!waiterMap[w]) waiterMap[w] = { waiter_name: w, orders_count: 0, total_sales: 0, service_fee: 0 };
+        waiterMap[w].orders_count++;
+        waiterMap[w].total_sales += tot;
+        waiterMap[w].service_fee += Number(o.service_fee || 0);
+
         (o.items || []).forEach((it) => {
           const n = it.name || it.id || 'Taom';
           if (!dishMap[n]) dishMap[n] = { name: n, qty: 0, revenue: 0 };
@@ -749,6 +826,7 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
     const cashOutTotal = mockCashOps.filter(c => c.op_type === 'cash_out').reduce((s, c) => s + c.amount, 0);
     const cashInDrawer = cashRev + cashInTotal - cashOutTotal;
     const topDishes = Object.values(dishMap).sort((a, b) => b.qty - a.qty).slice(0, 5);
+    const waiterStats = Object.values(waiterMap).sort((a, b) => b.total_sales - a.total_sales);
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(
@@ -769,6 +847,7 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
         avg_check: Math.round(totalRev / Math.max(1, validCount)),
         status_counts: statusCounts,
         top_dishes: topDishes,
+        waiter_stats: waiterStats,
         cash_operations: mockCashOps,
       })
     );

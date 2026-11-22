@@ -531,6 +531,45 @@
         if (buyoutSec) buyoutSec.style.display = isExternal ? "block" : "none";
       });
     });
+
+    // Cancel Reason Modal events
+    document.getElementById("btn-close-cancel-modal")?.addEventListener("click", closeCancelModal);
+    document.getElementById("btn-crm-back")?.addEventListener("click", closeCancelModal);
+    document.getElementById("btn-crm-confirm")?.addEventListener("click", confirmCancelWithReason);
+    document.querySelectorAll(".btn-crm-preset").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const txt = document.getElementById("crm-cancel-reason-text");
+        if (txt) {
+          txt.value = btn.dataset.reason || "";
+          txt.focus();
+        }
+      });
+    });
+
+    // DB Backup Download
+    document.getElementById("btn-download-db-backup")?.addEventListener("click", async () => {
+      try {
+        const res = await fetch(getAdminApiUrl("/api/admin/backup?download=1"), {
+          headers: getAuthHeaders(),
+        });
+        if (!res.ok) {
+          alert("Baza nusxasini yuklab olishda xatolik: " + res.status);
+          return;
+        }
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `cafe_bot_${new Date().toISOString().slice(0, 10)}.db`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error("Backup download error:", err);
+        alert("Baza nusxasini yuklab olishda xatolik yuz berdi.");
+      }
+    });
   }
 
   function applyLanguage() {
@@ -645,6 +684,111 @@
     return cleanBase + cleanEp;
   }
 
+  let currentAdminPin = "";
+
+  window.switchLoginMode = function(mode) {
+    const pinBox = document.getElementById("login-pin-box");
+    const formBox = document.getElementById("login-form");
+    const btnPin = document.getElementById("tab-login-pin");
+    const btnPass = document.getElementById("tab-login-pass");
+    if (mode === "pin") {
+      if (pinBox) pinBox.style.display = "block";
+      if (formBox) formBox.style.display = "none";
+      if (btnPin) { btnPin.style.background = "var(--primary)"; btnPin.style.color = "#fff"; }
+      if (btnPass) { btnPass.style.background = "transparent"; btnPass.style.color = "#64748b"; }
+    } else {
+      if (pinBox) pinBox.style.display = "none";
+      if (formBox) formBox.style.display = "block";
+      if (btnPass) { btnPass.style.background = "var(--primary)"; btnPass.style.color = "#fff"; }
+      if (btnPin) { btnPin.style.background = "transparent"; btnPin.style.color = "#64748b"; }
+    }
+  };
+
+  function updateAdminPinDots() {
+    for (let i = 0; i < 4; i++) {
+      const d = document.getElementById(`admin-pin-dot-${i}`);
+      if (d) {
+        if (i < currentAdminPin.length) {
+          d.style.background = "var(--primary)";
+          d.style.borderColor = "var(--primary)";
+        } else {
+          d.style.background = "#fff";
+          d.style.borderColor = "#cbd5e1";
+        }
+      }
+    }
+  }
+
+  window.handleAdminPin = function(digit) {
+    if (currentAdminPin.length >= 4) return;
+    currentAdminPin += digit;
+    updateAdminPinDots();
+    const errBox = document.getElementById("login-error");
+    if (errBox) errBox.hidden = true;
+    if (currentAdminPin.length === 4) {
+      submitLoginPayload({ pin: currentAdminPin });
+    }
+  };
+
+  window.clearAdminPin = function() {
+    currentAdminPin = "";
+    updateAdminPinDots();
+  };
+
+  window.backspaceAdminPin = function() {
+    currentAdminPin = currentAdminPin.slice(0, -1);
+    updateAdminPinDots();
+  };
+
+  function applyRolePermissions(role, username) {
+    const roleBadge = document.getElementById("user-role-badge");
+    const roleText = document.getElementById("user-role-text");
+    if (roleBadge && roleText) {
+      const roleMap = {
+        admin: { label: "👑 Egasi", color: "#0284c7" },
+        cashier: { label: "💵 Kassir", color: "#10b981" },
+        waiter: { label: "🍽️ Ofitsiant", color: "#f59e0b" },
+        kitchen: { label: "👨‍🍳 Oshpaz", color: "#ea580c" },
+        courier: { label: "🛵 Kuryer", color: "#6366f1" },
+      };
+      const info = roleMap[role] || { label: `👤 ${username}`, color: "#64748b" };
+      roleText.textContent = `${info.label} (${username})`;
+      roleBadge.style.background = info.color;
+    }
+
+    const btnPos = document.getElementById("tab-btn-pos");
+    const btnOrders = document.getElementById("tab-btn-orders");
+    const btnKitchen = document.getElementById("tab-btn-kitchen");
+    const btnCourier = document.getElementById("tab-btn-courier");
+    const btnTables = document.getElementById("tab-btn-tables");
+    const btnStoplist = document.getElementById("tab-btn-stoplist");
+    const btnReport = document.getElementById("tab-btn-report");
+
+    [btnPos, btnOrders, btnKitchen, btnCourier, btnTables, btnStoplist, btnReport].forEach(b => {
+      if (b) b.style.display = "";
+    });
+
+    if (role === "kitchen") {
+      [btnPos, btnOrders, btnCourier, btnTables, btnStoplist, btnReport].forEach(b => {
+        if (b) b.style.display = "none";
+      });
+      switchTab("kitchen");
+    } else if (role === "courier") {
+      [btnPos, btnOrders, btnKitchen, btnTables, btnStoplist, btnReport].forEach(b => {
+        if (b) b.style.display = "none";
+      });
+      switchTab("courier");
+    } else if (role === "waiter") {
+      if (btnReport) btnReport.style.display = "none";
+      if (btnStoplist) btnStoplist.style.display = "none";
+      if (btnCourier) btnCourier.style.display = "none";
+      switchTab("tables");
+    } else if (role === "cashier") {
+      if (btnStoplist) btnStoplist.style.display = "none";
+      switchTab("pos");
+    }
+  }
+
   async function checkAuth() {
     if (state.token) {
       try {
@@ -652,6 +796,10 @@
         if (res.ok) {
           const data = await res.json();
           if (data.ok) {
+            state.username = data.username || "admin";
+            state.role = data.role || "admin";
+            localStorage.setItem("ac_admin_role", state.role);
+            applyRolePermissions(state.role, state.username);
             showAdminUI();
             return;
           }
@@ -670,43 +818,51 @@
     return h;
   }
 
-  async function handleLogin(e) {
-    e.preventDefault();
+  async function submitLoginPayload(payload) {
     const errBox = document.getElementById("login-error");
     if (errBox) errBox.hidden = true;
-
-    const username = document.getElementById("login-username").value.trim();
-    const password = document.getElementById("login-password").value;
 
     try {
       const res = await fetch(getAdminApiUrl("/api/admin/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok) {
         state.token = data.token || "";
         state.username = data.username || "admin";
+        state.role = data.role || "admin";
         localStorage.setItem("ac_admin_token", state.token);
         localStorage.setItem("ac_admin_user", state.username);
+        localStorage.setItem("ac_admin_role", state.role);
+        applyRolePermissions(state.role, state.username);
+        currentAdminPin = "";
+        updateAdminPinDots();
         showAdminUI();
       } else {
         if (errBox) {
-          if (res.status === 404) {
-            errBox.textContent = "Server topilmadi (404). Agar Vercel yoki alohida domenda bo'lsangiz, asosiy POS server (bot.py) manzilini ko'rsating.";
-          } else {
-            errBox.textContent = data.error || "Login yoki parol xato.";
-          }
+          errBox.textContent = data.error || "Login yoki PIN xato.";
           errBox.hidden = false;
         }
+        currentAdminPin = "";
+        updateAdminPinDots();
       }
     } catch (err) {
       if (errBox) {
         errBox.textContent = "Server bilan aloqa yo'q. bot.py yoki local_preview.js ni yoqing.";
         errBox.hidden = false;
       }
+      currentAdminPin = "";
+      updateAdminPinDots();
     }
+  }
+
+  async function handleLogin(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    const username = document.getElementById("login-username")?.value.trim() || "";
+    const password = document.getElementById("login-password")?.value || "";
+    await submitLoginPayload({ username, password });
   }
 
   async function handleLogout() {
@@ -1583,6 +1739,9 @@
         updatePOSTableBanner();
       } else {
         // NEW DINE-IN ORDER
+        const waiterSelect = document.getElementById("pos-waiter-select");
+        const waiterName = waiterSelect && waiterSelect.value ? waiterSelect.value : (state.role === "waiter" ? state.username : "");
+
         const orderPayload = {
           idempotency_key: "pos_dine_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9),
           customer_name: tableName,
@@ -1594,6 +1753,7 @@
           payment_status: "pending",
           status: "cooking",
           source: "kassa",
+          waiter_name: waiterName,
           items: state.posCart.map((i) => ({
             id: i.id,
             name: i.name,
@@ -1607,7 +1767,11 @@
 
         const res = await fetch(getAdminApiUrl("/api/orders"), {
           method: "POST",
-          headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
+          headers: {
+            "Content-Type": "application/json",
+            "X-Requested-With": "XMLHttpRequest",
+            ...getAuthHeaders(),
+          },
           body: JSON.stringify(orderPayload),
         });
 
@@ -1707,6 +1871,9 @@
       const cashGiven = Number(document.getElementById("input-cash-given").value) || total;
       const change = Math.max(0, cashGiven - total);
 
+      const waiterSelect = document.getElementById("pos-waiter-select");
+      const waiterName = waiterSelect && waiterSelect.value ? waiterSelect.value : (state.role === "waiter" ? state.username : "");
+
       const orderPayload = {
         idempotency_key: "pos_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9),
         customer_name: custName,
@@ -1717,6 +1884,7 @@
         payment_method: (state.payMethod === "click" || state.payMethod === "payme") ? "online" : (state.payMethod || "cash"),
         payment_status: "paid",
         source: "kassa",
+        waiter_name: waiterName,
         items: state.posCart.map((i) => ({
           id: i.id,
           name: i.name,
@@ -1730,7 +1898,11 @@
 
       const res = await fetch(getAdminApiUrl("/api/orders"), {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Requested-With": "XMLHttpRequest",
+          ...getAuthHeaders(),
+        },
         body: JSON.stringify(orderPayload),
       });
       const data = await res.json().catch(() => ({}));
@@ -2079,9 +2251,7 @@
       const cancelBtn = card.querySelector(".btn-cancel-ord");
       if (cancelBtn) {
         cancelBtn.addEventListener("click", () => {
-          if (confirm("Buyurtmani bekor qilishni tasdiqlaysizmi?")) {
-            updateOrderStatus(ord.id, "cancelled");
-          }
+          openCancelModal(ord);
         });
       }
 
@@ -2322,15 +2492,47 @@
     }, 150);
   }
 
-  async function updateOrderStatus(id, newStatus) {
+  function openCancelModal(ord) {
+    state.cancelTargetOrder = ord;
+    const modal = document.getElementById("cancel-reason-modal");
+    if (!modal) return;
+    const codeEl = document.getElementById("crm-order-code");
+    const sumEl = document.getElementById("crm-order-sum");
+    const txtEl = document.getElementById("crm-cancel-reason-text");
+    if (codeEl) codeEl.textContent = getOrderCode(ord);
+    if (sumEl) sumEl.textContent = (ord.total || ord.total_amount || 0).toLocaleString("ru-RU") + " so'm";
+    if (txtEl) txtEl.value = "";
+    modal.style.display = "flex";
+  }
+
+  function closeCancelModal() {
+    state.cancelTargetOrder = null;
+    const modal = document.getElementById("cancel-reason-modal");
+    if (modal) modal.style.display = "none";
+  }
+
+  async function confirmCancelWithReason() {
+    const ord = state.cancelTargetOrder;
+    if (!ord) return;
+    const txtEl = document.getElementById("crm-cancel-reason-text");
+    const reason = (txtEl?.value || "").trim() || "Sabab ko'rsatilmadi";
+    const ordId = ord.id;
+    closeCancelModal();
+    await updateOrderStatus(ordId, "cancelled", reason);
+  }
+
+  async function updateOrderStatus(id, newStatus, cancelReason = "") {
     try {
+      const payload = { status: newStatus };
+      if (cancelReason) payload.cancel_reason = cancelReason;
       const res = await fetch(getAdminApiUrl(`/api/admin/orders/${id}/status`), {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
+          "X-Requested-With": "XMLHttpRequest",
           ...getAuthHeaders(),
         },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify(payload),
       });
       if (res.ok) {
         const data = await res.json();
@@ -2988,6 +3190,14 @@
     document.getElementById("rep-val-cash").textContent = (s.cash_revenue || 0).toLocaleString("ru-RU") + " so'm";
     document.getElementById("rep-val-card").textContent = (s.card_revenue || 0).toLocaleString("ru-RU") + " so'm";
     document.getElementById("rep-val-click").textContent = (s.online_revenue || 0).toLocaleString("ru-RU") + " so'm";
+
+    const openTablesEl = document.getElementById("rep-val-open-tables");
+    if (openTablesEl) {
+      const openCount = s.unpaid_open_tables_count || 0;
+      const openRev = (s.unpaid_open_tables_revenue || 0).toLocaleString("ru-RU");
+      openTablesEl.textContent = `${openCount} ta (${openRev} so'm)`;
+    }
+
     const drawerEl = document.getElementById("rep-val-drawer");
     if (drawerEl) {
       const drawerAmount = s.cash_in_drawer ?? s.cash_revenue ?? 0;
@@ -3010,6 +3220,38 @@
         `
           )
           .join("");
+      }
+    }
+
+    // Waiter Performance & Service Fee
+    const waitersBox = document.getElementById("report-waiters-list");
+    if (waitersBox) {
+      const wList = Array.isArray(s.waiter_stats) ? s.waiter_stats : [];
+      if (wList.length === 0) {
+        waitersBox.innerHTML = `<div style="color:var(--text-dim); font-size:13px; padding:10px 0;">Ofitsiantlar bo'yicha hisobot hali shakllanmadi.</div>`;
+      } else {
+        waitersBox.innerHTML = `
+          <table style="width:100%; border-collapse:collapse; font-size:13px; text-align:left;">
+            <thead>
+              <tr style="background:#f1f5f9; border-bottom:2px solid #cbd5e1;">
+                <th style="padding:8px 10px;">Ofitsiant</th>
+                <th style="padding:8px 10px; text-align:center;">Buyurtmalar</th>
+                <th style="padding:8px 10px; text-align:right;">Jami savdo</th>
+                <th style="padding:8px 10px; text-align:right; color:#0284c7;">10% Xizmat haqi</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${wList.map(w => `
+                <tr style="border-bottom:1px solid #e2e8f0;">
+                  <td style="padding:8px 10px; font-weight:800;">🍽️ ${escapeHtml(w.waiter_name || "Kassa / Umumiy")}</td>
+                  <td style="padding:8px 10px; text-align:center; font-weight:700;">${w.orders_count || 0} ta</td>
+                  <td style="padding:8px 10px; text-align:right; font-weight:800;">${Number(w.total_sales || 0).toLocaleString("ru-RU")} so'm</td>
+                  <td style="padding:8px 10px; text-align:right; font-weight:800; color:#0284c7;">${Number(w.service_fee || 0).toLocaleString("ru-RU")} so'm</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        `;
       }
     }
   }

@@ -1182,6 +1182,7 @@ try {
     setupScrollReveal();
     setupProgressBar();
     setupEventListeners();
+    initQRTable();
   });
 
   function initLanguage() {
@@ -2849,6 +2850,70 @@ ${savedOrder.comment ? `💬 Комментарий: ${savedOrder.comment}\n` : 
       }, { threshold: 0.2 });
       footerObserver.observe(footer);
     }
+  }
+
+  // === QR Code Table Preselection ===
+  function initQRTable() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const rawParam = params.get('table') || params.get('stol') || params.get('st') || '';
+      if (!rawParam) return;
+
+      const tableSelect = document.getElementById('order-table-select');
+      const dineinRadio = document.getElementById('opt-dinein');
+      if (!tableSelect || !dineinRadio) return;
+
+      let matchedValue = '';
+      const cleanParam = rawParam.trim().toLowerCase();
+
+      for (const opt of tableSelect.options) {
+        const optVal = opt.value.toLowerCase();
+        if (cleanParam === optVal || optVal.includes(cleanParam) || cleanParam.includes(optVal)) {
+          matchedValue = opt.value;
+          break;
+        }
+        const numMatch = cleanParam.match(/\d+/);
+        if (numMatch && optVal.startsWith(numMatch[0] + '-')) {
+          matchedValue = opt.value;
+          break;
+        }
+      }
+
+      if (!matchedValue) {
+        if (cleanParam.includes('vip')) {
+          matchedValue = 'VIP Xona';
+        } else {
+          const numMatch = cleanParam.match(/\d+/);
+          matchedValue = numMatch ? `${numMatch[0]}-Stol` : (tableSelect.options[0]?.value || '1-Stol');
+        }
+      }
+
+      tableSelect.value = matchedValue;
+
+      // Select dine-in delivery mode
+      dineinRadio.checked = true;
+      dineinRadio.dispatchEvent(new Event('change'));
+
+      showQRTableBanner(matchedValue);
+    } catch (e) {
+      console.warn('QR table init error:', e);
+    }
+  }
+
+  function showQRTableBanner(tableName) {
+    if (document.getElementById('qr-table-banner')) return;
+    const banner = document.createElement('div');
+    banner.id = 'qr-table-banner';
+    banner.className = 'w-full bg-[#166534] text-white px-4 py-2.5 text-center text-[13px] font-bold shadow-md sticky top-0 z-[60] flex items-center justify-between transition-all';
+    const isUz = (typeof currentLang !== 'undefined' && currentLang === 'uz');
+    banner.innerHTML = `
+      <div class="flex items-center gap-2 mx-auto">
+        <span class="text-base">🪑</span>
+        <span>${isUz ? `Siz <strong>${tableName}</strong>dasiz (Zalda xizmat). Buyurtma oshxona va kassaga tushadi.` : `Вы за столом: <strong>${tableName}</strong> (В зале). Заказ поступит прямо на кухню.`}</span>
+      </div>
+      <button type="button" class="text-white/80 hover:text-white text-xl font-bold ml-2 leading-none cursor-pointer" onclick="document.getElementById('qr-table-banner')?.remove()">&times;</button>
+    `;
+    document.body.prepend(banner);
   }
 
   // === Android Hardware Back Button (Capacitor) ===

@@ -22,9 +22,12 @@
     header { background: #1e293b; color: #fff; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
     .header-logo { display: flex; align-items: center; gap: 10px; font-weight: 900; font-size: 16px; }
     .header-logo img { width: 32px; height: 32px; border-radius: 6px; }
+    .header-right { display: flex; align-items: center; gap: 8px; }
     .badge-live { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; background: #065f46; color: #a7f3d0; padding: 4px 8px; border-radius: 999px; }
     .pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: #34d399; animation: pulse 1.5s infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.85); } }
+    .btn-logout { background: rgba(255,255,255,0.15); border: none; color: #fff; padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; }
+
     main { max-width: 600px; margin: 16px auto; padding: 0 12px; display: flex; flex-direction: column; gap: 14px; }
     .order-card { background: var(--card-bg); border-radius: 12px; border: 2px solid #e2e8f0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); overflow: hidden; }
     .card-head { background: #f8fafc; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; }
@@ -37,17 +40,30 @@
     .info-label { font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
     .info-value { font-size: 15px; font-weight: 800; }
     .info-link { color: var(--primary); text-decoration: underline; word-break: break-word; }
-    .phone-link { color: #16a34a; text-decoration: none; font-size: 17px; display: inline-flex; align-items: center; gap: 4px; }
+    .phone-link { color: #16a34a; text-decoration: none; font-size: 17px; display: inline-flex; align-items: center; gap: 4px; font-weight: 800; }
     .items-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 10px; font-size: 13px; font-weight: 600; line-height: 1.5; }
-    .pay-badge { border-radius: 8px; padding: 10px 12px; font-size: 15px; font-weight: 900; text-align: center; }
+    .pay-badge { border-radius: 8px; padding: 10px 12px; font-size: 14px; font-weight: 900; text-align: center; }
     .pay-cash { background: #fef3c7; border: 2px solid #f59e0b; color: #92400e; }
     .pay-card { background: #fee2e2; border: 2px solid #ef4444; color: #991b1b; }
     .pay-paid { background: #d1fae5; border: 2px solid #10b981; color: #065f46; }
+    .pay-buyout { background: #eff6ff; border: 2px solid #3b82f6; color: #1e40af; }
     .card-footer { padding: 10px 14px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; gap: 8px; }
     .btn-action { flex: 1; padding: 12px; border-radius: 8px; border: none; font-size: 15px; font-weight: 900; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; }
     .btn-take { background: var(--primary); color: #fff; }
     .btn-done { background: var(--success); color: #fff; }
     .empty-state { text-align: center; padding: 50px 20px; color: var(--muted); background: #fff; border-radius: 12px; border: 2px dashed #cbd5e1; }
+
+    /* Auth modal overlay */
+    .auth-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 16px; }
+    .auth-card { background: #fff; border-radius: 16px; width: 100%; max-width: 360px; padding: 24px 20px; text-align: center; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3); }
+    .pin-display { display: flex; justify-content: center; gap: 12px; margin: 18px 0; }
+    .pin-dot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #cbd5e1; background: #fff; transition: all 0.2s; }
+    .pin-dot.filled { background: var(--primary); border-color: var(--primary); transform: scale(1.15); }
+    .numpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+    .btn-num { background: #f1f5f9; border: none; border-radius: 12px; padding: 14px 0; font-size: 20px; font-weight: 800; color: #1e293b; cursor: pointer; }
+    .btn-num:active { background: #e2e8f0; }
+    .btn-num-op { background: #fed7aa; color: #9a3412; }
+    .auth-error { color: #dc2626; font-size: 13px; font-weight: 700; margin-top: 8px; min-height: 20px; }
   </style>
 </head>
 <body>
@@ -56,40 +72,176 @@
       <img src="images/logo.png" alt="American Caffetteria" />
       <span>AMERICAN KURYER</span>
     </div>
-    <div class="badge-live">
-      <span class="pulse-dot"></span>
-      <span id="live-text">JONLI (0)</span>
+    <div class="header-right">
+      <div class="badge-live">
+        <span class="pulse-dot"></span>
+        <span id="live-text">JONLI (0)</span>
+      </div>
+      <button type="button" class="btn-logout" onclick="courierLogout()" title="Chiqish">
+        <i class="ti ti-logout"></i>
+      </button>
     </div>
   </header>
+
+  <!-- Login Modal with Fast 4-digit PIN Pad -->
+  <div id="courier-auth-modal" class="auth-overlay" style="display: none;">
+    <div class="auth-card">
+      <img src="images/logo.png" alt="Logo" style="width: 56px; height: 56px; border-radius: 12px; margin-bottom: 8px;" />
+      <h3 style="font-size: 18px; font-weight: 900; color: #1e293b;">Kuryer tizimiga kirish</h3>
+      <p style="font-size: 13px; color: var(--muted); margin-top: 4px;">4 xonali PIN-kodingizni tering (Kuryer PIN: 4444)</p>
+
+      <div class="pin-display">
+        <div class="pin-dot" id="dot-0"></div>
+        <div class="pin-dot" id="dot-1"></div>
+        <div class="pin-dot" id="dot-2"></div>
+        <div class="pin-dot" id="dot-3"></div>
+      </div>
+
+      <div id="auth-err-msg" class="auth-error"></div>
+
+      <div class="numpad">
+        <button type="button" class="btn-num" onclick="pressPin('1')">1</button>
+        <button type="button" class="btn-num" onclick="pressPin('2')">2</button>
+        <button type="button" class="btn-num" onclick="pressPin('3')">3</button>
+        <button type="button" class="btn-num" onclick="pressPin('4')">4</button>
+        <button type="button" class="btn-num" onclick="pressPin('5')">5</button>
+        <button type="button" class="btn-num" onclick="pressPin('6')">6</button>
+        <button type="button" class="btn-num" onclick="pressPin('7')">7</button>
+        <button type="button" class="btn-num" onclick="pressPin('8')">8</button>
+        <button type="button" class="btn-num" onclick="pressPin('9')">9</button>
+        <button type="button" class="btn-num btn-num-op" onclick="clearPin()">C</button>
+        <button type="button" class="btn-num" onclick="pressPin('0')">0</button>
+        <button type="button" class="btn-num btn-num-op" onclick="backspacePin()"><i class="ti ti-backspace"></i></button>
+      </div>
+    </div>
+  </div>
 
   <main id="courier-orders-list">
     <div class="empty-state">
       <i class="ti ti-bike" style="font-size: 40px; margin-bottom: 8px; display: block;"></i>
-      <h3 style="font-size: 17px; font-weight: 800; color: #1e293b;">Hozircha buyurtma yo'q</h3>
-      <p style="font-size: 13px; margin-top: 4px;">Yangi yetkazib berish buyurtmasi tayyor bo'lganda bu yerda avtomatik ko'rinadi.</p>
+      <h3 style="font-size: 17px; font-weight: 800; color: #1e293b;">Yuklanmoqda...</h3>
+      <p style="font-size: 13px; margin-top: 4px;">Buyurtmalar yangilanmoqda.</p>
     </div>
   </main>
 
   <script>
     const API_BASE = window.API_BASE_URL || "";
     let orders = [];
+    let currentPin = "";
 
     function escapeHtml(str) {
       if (!str) return "";
       return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     }
 
-    async function fetchCourierOrders() {
+    function checkAuth() {
+      const token = localStorage.getItem("ac_admin_token");
+      const modal = document.getElementById("courier-auth-modal");
+      if (!token) {
+        if (modal) modal.style.display = "flex";
+        return false;
+      } else {
+        if (modal) modal.style.display = "none";
+        return true;
+      }
+    }
+
+    function courierLogout() {
+      if (confirm("Kuryer rejimidan chiqmoqchimisiz?")) {
+        localStorage.removeItem("ac_admin_token");
+        currentPin = "";
+        updatePinDots();
+        checkAuth();
+      }
+    }
+
+    function updatePinDots() {
+      for (let i = 0; i < 4; i++) {
+        const d = document.getElementById(`dot-${i}`);
+        if (d) {
+          if (i < currentPin.length) d.classList.add("filled");
+          else d.classList.remove("filled");
+        }
+      }
+    }
+
+    function pressPin(digit) {
+      if (currentPin.length >= 4) return;
+      currentPin += digit;
+      updatePinDots();
+      document.getElementById("auth-err-msg").textContent = "";
+      if (currentPin.length === 4) {
+        submitPinLogin();
+      }
+    }
+
+    function clearPin() {
+      currentPin = "";
+      updatePinDots();
+      document.getElementById("auth-err-msg").textContent = "";
+    }
+
+    function backspacePin() {
+      currentPin = currentPin.slice(0, -1);
+      updatePinDots();
+      document.getElementById("auth-err-msg").textContent = "";
+    }
+
+    async function submitPinLogin() {
+      const errMsg = document.getElementById("auth-err-msg");
       try {
-        const token = localStorage.getItem("ac_admin_token") || "";
-        const headers = token ? { "Authorization": `Bearer ${token}` } : {};
-        const res = await fetch(`${API_BASE}/api/admin/orders?limit=100`, { headers });
+        const res = await fetch(`${API_BASE}/api/admin/login`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Requested-With": "XMLHttpRequest",
+          },
+          body: JSON.stringify({ pin: currentPin }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.ok && data.token) {
+          localStorage.setItem("ac_admin_token", data.token);
+          checkAuth();
+          fetchCourierOrders();
+        } else {
+          errMsg.textContent = data.error || "PIN-kod noto'g'ri!";
+          currentPin = "";
+          updatePinDots();
+        }
+      } catch (e) {
+        errMsg.textContent = "Server bilan aloqa yo'q";
+        currentPin = "";
+        updatePinDots();
+      }
+    }
+
+    function getAuthHeaders() {
+      const token = localStorage.getItem("ac_admin_token") || "";
+      const h = {
+        "Content-Type": "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+      };
+      if (token) h["Authorization"] = `Bearer ${token}`;
+      return h;
+    }
+
+    async function fetchCourierOrders() {
+      if (!checkAuth()) return;
+      try {
+        const res = await fetch(`${API_BASE}/api/admin/orders?limit=100`, {
+          headers: getAuthHeaders(),
+        });
+        if (res.status === 401) {
+          localStorage.removeItem("ac_admin_token");
+          checkAuth();
+          return;
+        }
         if (res.ok) {
           const data = await res.json();
           if (data.ok && Array.isArray(data.orders)) {
             orders = data.orders.filter(o => {
               const st = (o.status || "").toLowerCase();
-              return o.delivery_type === "delivery" && (st === "ready" || st === "delivering" || st === "cooking" || st === "preparing");
+              return o.delivery_type === "delivery" && (st === "ready" || st === "delivering" || st === "cooking" || st === "preparing" || st === "accepted");
             });
             renderList();
           }
@@ -119,21 +271,24 @@
         const st = (ord.status || "").toLowerCase();
         const code = ord.order_code || `#AC-${ord.id}`;
         const total = Number(ord.total || 0).toLocaleString("ru-RU");
-        const isPaid = ord.payment_status === "paid" || ord.courier_paid_upfront === 1;
         const rawPm = String(ord.payment_method || "cash").toLowerCase();
+        const isExternalBuyout = ord.delivery_mode === "external_buyout" || ord.courier_paid_upfront === 1;
+        const isOnlinePaid = ord.payment_status === "paid" && !isExternalBuyout;
 
         let payBadge = "";
-        if (isPaid) {
-          payBadge = `<div class="pay-badge pay-paid">🟢 TO'LANGAN (Kassada to'langan / Click)</div>`;
+        if (isExternalBuyout) {
+          payBadge = `<div class="pay-badge pay-buyout">📦 TASHQI VIKUP (Kassaga to'langan — mijozdan naqd ${total} so'm oling!)</div>`;
+        } else if (isOnlinePaid) {
+          payBadge = `<div class="pay-badge pay-paid">🟢 ONLAYN TO'LANGAN (Mijozdan pul olmang!)</div>`;
         } else if (rawPm === "card_terminal" || (ord.comment || "").toLowerCase().includes("terminal")) {
-          payBadge = `<div class="pay-badge pay-card">💳 KURYERDA TERMINAL: ${total} so'm</div>`;
+          payBadge = `<div class="pay-badge pay-card">💳 TERMINALDA OLING: ${total} so'm</div>`;
         } else {
           payBadge = `<div class="pay-badge pay-cash">💵 NAQD PUL: ${total} so'm oling</div>`;
         }
 
         const isDelivering = st === "delivering";
         const tagClass = isDelivering ? "tag-delivering" : "tag-ready";
-        const tagText = isDelivering ? "🛵 Yo'lda" : "🍳 Tayyor / Oshxonada";
+        const tagText = isDelivering ? "🛵 Yo'lda" : "🍳 Tayyorlanmoqda / Tayyor";
 
         let itemsText = "";
         if (Array.isArray(ord.items)) {
@@ -183,7 +338,7 @@
                 </button>
               ` : `
                 <button type="button" class="btn-action btn-done" onclick="finishOrder(${ord.id})">
-                  <i class="ti ti-circle-check"></i> Yetkazildi / To'lov olindi
+                  <i class="ti ti-circle-check"></i> Yetkazildi / Yakunlash
                 </button>
               `}
             </div>
@@ -194,16 +349,16 @@
 
     async function updateStatus(id, newStatus) {
       try {
-        const token = localStorage.getItem("ac_admin_token") || "";
-        const headers = { "Content-Type": "application/json" };
-        if (token) headers["Authorization"] = `Bearer ${token}`;
         const res = await fetch(`${API_BASE}/api/admin/orders/${id}/status`, {
           method: "PATCH",
-          headers,
+          headers: getAuthHeaders(),
           body: JSON.stringify({ status: newStatus }),
         });
         if (res.ok) {
           fetchCourierOrders();
+        } else if (res.status === 401) {
+          localStorage.removeItem("ac_admin_token");
+          checkAuth();
         }
       } catch (e) {
         console.warn("Update status error:", e);
@@ -211,25 +366,25 @@
     }
 
     async function finishOrder(id) {
-      if (!confirm("Buyurtma mijozga yetkazildi va to'lov qabul qilindimi?")) return;
+      if (!confirm("Buyurtma mijozga yetkazildi va hisob-kitob qilindimi?")) return;
       try {
-        const token = localStorage.getItem("ac_admin_token") || "";
-        const headers = { "Content-Type": "application/json" };
-        if (token) headers["Authorization"] = `Bearer ${token}`;
         const res = await fetch(`${API_BASE}/api/admin/orders/${id}/status`, {
           method: "PATCH",
-          headers,
+          headers: getAuthHeaders(),
           body: JSON.stringify({ status: "completed", payment_status: "paid" }),
         });
         if (res.ok) {
           fetchCourierOrders();
+        } else if (res.status === 401) {
+          localStorage.removeItem("ac_admin_token");
+          checkAuth();
         }
       } catch (e) {
         console.warn("Finish order error:", e);
       }
     }
 
-    // Connect SSE
+    // Connect SSE with auto-reconnect
     function initSSE() {
       try {
         const sse = new EventSource(`${API_BASE}/api/stream`);
@@ -238,6 +393,7 @@
       } catch (_) {}
     }
 
+    checkAuth();
     fetchCourierOrders();
     initSSE();
     setInterval(fetchCourierOrders, 4000);

@@ -219,16 +219,60 @@ def main():
             assert "text/event-stream" in ctype and "event: connected" in first_chunk, f"SSE failed: {ctype} {first_chunk}"
         print("14. GET /api/stream (SSE Stream) -> SUCCESS (text/event-stream)")
 
+        # 15. Fast 4-digit PIN Logins (Role checks)
+        st_pin, d_pin = req_json(f"{base}/api/admin/login", "POST", {"pin": "7777"})
+        assert st_pin == 200 and d_pin.get("ok") and d_pin.get("role") in ("admin", "owner"), f"Owner PIN login failed: {d_pin}"
+        st_pin_c, d_pin_c = req_json(f"{base}/api/admin/login", "POST", {"pin": "4444"})
+        assert st_pin_c == 200 and d_pin_c.get("ok") and d_pin_c.get("role") == "courier", f"Courier PIN login failed: {d_pin_c}"
+        print("15. POST /api/admin/login (PIN 7777 admin & PIN 4444 courier) -> SUCCESS")
+
+        # 16. Cancellation with cancel_reason
+        st_can_ord, d_can_ord = req_json(
+            f"{base}/api/orders",
+            "POST",
+            {
+                "items": [{"id": "coca_cola_05", "qty": 1}],
+                "delivery_type": "dine_in",
+                "customer_name": "Test Cancel Order",
+                "phone": "+998 90 123 45 67",
+                "payment_status": "pending",
+                "source": "kassa",
+                "waiter_name": "Jasur",
+            },
+            auth_hdr,
+        )
+        assert st_can_ord in (200, 201) and d_can_ord.get("ok"), f"Create order to cancel failed: {d_can_ord}"
+        can_ord_id = d_can_ord["order"]["id"]
+        st_canc, d_canc = req_json(
+            f"{base}/api/admin/orders/{can_ord_id}/status",
+            "PATCH",
+            {"status": "cancelled", "cancel_reason": "Mijoz fikridan qaytdi"},
+            auth_hdr,
+        )
+        assert st_canc == 200 and d_canc.get("ok") and d_canc["order"]["cancel_reason"] == "Mijoz fikridan qaytdi", f"Cancel reason failed: {d_canc}"
+        print(f"16. PATCH /api/admin/orders/{can_ord_id}/status (cancelled with reason) -> SUCCESS")
+
+        # 17. Database Backup download
+        req_bk = urllib.request.Request(f"{base}/api/admin/backup?download=1", headers=auth_hdr)
+        with opener.open(req_bk, timeout=5) as bk_resp:
+            assert bk_resp.status == 200, f"Backup download failed with status {bk_resp.status}"
+            bk_data = bk_resp.read(16)
+            assert b"SQLite format 3" in bk_data, f"Backup content is not SQLite: {bk_data}"
+        print("17. GET /api/admin/backup?download=1 (SQLite verification) -> SUCCESS")
+
+        # 18. Stats with waiter accounting & open tables verification
+        st_st, d_st = req_json(f"{base}/api/admin/stats", "GET", None, auth_hdr)
+        assert st_st == 200 and d_st.get("ok"), f"Stats failed: {d_st}"
+        assert "waiter_stats" in d_st, f"waiter_stats missing in stats: {d_st}"
+        assert "unpaid_open_tables_count" in d_st, f"unpaid_open_tables_count missing in stats: {d_st}"
+        print("18. GET /api/admin/stats (waiter_stats & unpaid_open_tables_count) -> SUCCESS")
+
         print("\n==========================================")
-        print("  NATIJA: 14/14 PASS (100% SUCCESS)       ")
+        print("  NATIJA: 18/18 PASS (100% SUCCESS)       ")
         print("==========================================\n")
     finally:
         proc.terminate()
         proc.wait(timeout=3)
-
-
-if __name__ == "__main__":
-    main()
 
 
 if __name__ == "__main__":

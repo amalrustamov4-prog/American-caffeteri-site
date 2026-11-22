@@ -20,28 +20,60 @@
       <div class="brand-badge">AMERICAN CAFFETTERIA · POS</div>
       <h1 id="txt-login-title">Kassaga kirish</h1>
       <p class="login-subtitle" id="txt-login-sub">Termiz sh. · Tezkor kassa va buyurtmalar terminali</p>
+
+      <!-- Kirish rejimi: PIN-kod yoki Login/Parol -->
+      <div style="display:flex; gap:8px; margin: 12px 0 16px; background:#f1f5f9; padding:4px; border-radius:10px;">
+        <button type="button" id="tab-login-pin" style="flex:1; padding:8px; border-radius:8px; border:none; font-weight:800; cursor:pointer; background:var(--primary); color:#fff;" onclick="switchLoginMode('pin')">🔢 Tezkor PIN</button>
+        <button type="button" id="tab-login-pass" style="flex:1; padding:8px; border-radius:8px; border:none; font-weight:800; cursor:pointer; background:transparent; color:#64748b;" onclick="switchLoginMode('pass')">🔑 Login & Parol</button>
+      </div>
+
+      <!-- 1. Tezkor PIN formasi -->
+      <div id="login-pin-box">
+        <p style="font-size:12px; color:var(--muted); text-align:center;">4 xonali PIN-kodingizni tering</p>
+        <div style="display:flex; justify-content:center; gap:12px; margin:14px 0;">
+          <div class="pin-dot" id="admin-pin-dot-0" style="width:14px; height:14px; border-radius:50%; border:2px solid #cbd5e1; background:#fff;"></div>
+          <div class="pin-dot" id="admin-pin-dot-1" style="width:14px; height:14px; border-radius:50%; border:2px solid #cbd5e1; background:#fff;"></div>
+          <div class="pin-dot" id="admin-pin-dot-2" style="width:14px; height:14px; border-radius:50%; border:2px solid #cbd5e1; background:#fff;"></div>
+          <div class="pin-dot" id="admin-pin-dot-3" style="width:14px; height:14px; border-radius:50%; border:2px solid #cbd5e1; background:#fff;"></div>
+        </div>
+        <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; max-width:280px; margin:0 auto 10px;">
+          <button type="button" class="btn-primary-large" style="padding:12px 0; margin:0; font-size:18px; font-weight:800; background:#f1f5f9; color:#1e293b;" onclick="handleAdminPin('1')">1</button>
+          <button type="button" class="btn-primary-large" style="padding:12px 0; margin:0; font-size:18px; font-weight:800; background:#f1f5f9; color:#1e293b;" onclick="handleAdminPin('2')">2</button>
+          <button type="button" class="btn-primary-large" style="padding:12px 0; margin:0; font-size:18px; font-weight:800; background:#f1f5f9; color:#1e293b;" onclick="handleAdminPin('3')">3</button>
+          <button type="button" class="btn-primary-large" style="padding:12px 0; margin:0; font-size:18px; font-weight:800; background:#f1f5f9; color:#1e293b;" onclick="handleAdminPin('4')">4</button>
+          <button type="button" class="btn-primary-large" style="padding:12px 0; margin:0; font-size:18px; font-weight:800; background:#f1f5f9; color:#1e293b;" onclick="handleAdminPin('5')">5</button>
+          <button type="button" class="btn-primary-large" style="padding:12px 0; margin:0; font-size:18px; font-weight:800; background:#f1f5f9; color:#1e293b;" onclick="handleAdminPin('6')">6</button>
+          <button type="button" class="btn-primary-large" style="padding:12px 0; margin:0; font-size:18px; font-weight:800; background:#f1f5f9; color:#1e293b;" onclick="handleAdminPin('7')">7</button>
+          <button type="button" class="btn-primary-large" style="padding:12px 0; margin:0; font-size:18px; font-weight:800; background:#f1f5f9; color:#1e293b;" onclick="handleAdminPin('8')">8</button>
+          <button type="button" class="btn-primary-large" style="padding:12px 0; margin:0; font-size:18px; font-weight:800; background:#f1f5f9; color:#1e293b;" onclick="handleAdminPin('9')">9</button>
+          <button type="button" class="btn-primary-large" style="padding:12px 0; margin:0; font-size:16px; font-weight:800; background:#fee2e2; color:#991b1b;" onclick="clearAdminPin()">C</button>
+          <button type="button" class="btn-primary-large" style="padding:12px 0; margin:0; font-size:18px; font-weight:800; background:#f1f5f9; color:#1e293b;" onclick="handleAdminPin('0')">0</button>
+          <button type="button" class="btn-primary-large" style="padding:12px 0; margin:0; font-size:16px; font-weight:800; background:#fef3c7; color:#92400e;" onclick="backspaceAdminPin()"><i class="ti ti-backspace"></i></button>
+        </div>
+      </div>
       
-      <form id="login-form" class="login-form" autocomplete="off">
+      <!-- 2. Login va parol formasi -->
+      <form id="login-form" class="login-form" autocomplete="off" style="display:none;">
         <div>
           <label class="field-label" for="login-username" id="txt-login-user-lbl">Operator logini</label>
-          <input id="login-username" name="username" type="text" placeholder="admin" class="input-styled" required autocomplete="username" />
+          <input id="login-username" name="username" type="text" placeholder="admin" class="input-styled" autocomplete="username" />
         </div>
 
         <div>
           <label class="field-label" for="login-password" id="txt-login-pass-lbl">Parol</label>
           <div style="position:relative; display:flex; align-items:center;">
-            <input id="login-password" name="password" type="password" placeholder="Parolni kiriting..." class="input-styled" style="padding-right:42px;" required autocomplete="current-password" />
+            <input id="login-password" name="password" type="password" placeholder="Parolni kiriting..." class="input-styled" style="padding-right:42px;" autocomplete="current-password" />
             <button type="button" id="btn-toggle-pwd" onclick="const p=document.getElementById('login-password'); p.type = p.type === 'password' ? 'text' : 'password';" style="position:absolute; right:10px; background:none; border:none; color:var(--ink); cursor:pointer; font-size:16px;" title="Parolni ko'rsatish">
               <i class="ti ti-eye"></i>
             </button>
           </div>
         </div>
 
-        <div id="login-error" class="alert-error" hidden></div>
-        <button id="login-submit" type="submit" class="btn-primary-large">
+        <button id="login-submit" type="submit" class="btn-primary-large" style="margin-top:10px;">
           <i class="ti ti-login"></i> <span id="txt-btn-login">Kassaga kirish</span>
         </button>
       </form>
+      <div id="login-error" class="alert-error" hidden style="margin-top:8px;"></div>
     </div>
   </section>
 
@@ -109,6 +141,10 @@
         <button id="lang-toggle-btn" type="button" class="header-btn" title="Tilni o'zgartirish">
           <span id="lang-label">UZ</span>
         </button>
+
+        <div id="user-role-badge" style="background:#0284c7; color:#fff; font-size:12px; font-weight:800; padding:6px 12px; border-radius:8px; display:inline-flex; align-items:center; gap:6px;">
+          <i class="ti ti-user-check"></i> <span id="user-role-text">Egasi</span>
+        </div>
 
         <button id="logout-btn" type="button" class="header-btn" style="color:#ef4444;" title="Chiqish">
           <i class="ti ti-logout"></i>
@@ -222,6 +258,16 @@
               <option value="7-Stol">🪑 7-Stol (4 o'rinli)</option>
               <option value="8-Stol">🪑 8-Stol (8 o'rinli)</option>
               <option value="VIP Xona">👑 VIP Xona (10 o'rinli)</option>
+            </select>
+          </div>
+          <!-- WAITER SELECTOR -->
+          <div id="pos-waiter-select-wrap" style="margin-top:6px;">
+            <select id="pos-waiter-select" class="input-styled" style="padding:6px 10px; font-weight:800; font-size:13px; width:100%;">
+              <option value="">🍽️ Ofitsiant: Tanlanmagan (Kassa)</option>
+              <option value="Jasur">🍽️ Jasur</option>
+              <option value="Sardor">🍽️ Sardor</option>
+              <option value="Alisher">🍽️ Alisher</option>
+              <option value="Malika">🍽️ Malika</option>
             </select>
           </div>
           <!-- TABLE LIVE STATUS BANNER -->
@@ -444,6 +490,24 @@
           <span>Kassadagi naqd qoldiq:</span>
           <strong id="rep-val-drawer" style="color:#10b981;">0 so'm</strong>
         </div>
+        <div class="report-stat-card" style="border:2px solid #fdba74; background:#fff7ed;">
+          <span style="color:#c2410c; font-weight:800;">🪑 Ochiq stollar (to'lanmagan):</span>
+          <strong id="rep-val-open-tables" style="color:#c2410c;">0 ta (0 so'm)</strong>
+        </div>
+      </div>
+
+      <div class="report-header-card" style="margin-top:20px;">
+        <div style="width:100%;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+            <h3 style="font-size:18px; font-weight:800;">🍽️ Ofitsiantlar Smena Hisoboti & 10% Xizmat Haqi</h3>
+            <button id="btn-download-db-backup" type="button" class="header-btn" style="background:#0284c7; color:#fff; padding:6px 14px; font-size:13px; font-weight:700;">
+              <i class="ti ti-download"></i> <span>Baza zaxira nusxasi (Backup)</span>
+            </button>
+          </div>
+          <div id="report-waiters-list" style="overflow-x:auto;">
+            <!-- Rendered by admin.js -->
+          </div>
+        </div>
       </div>
 
       <div class="report-header-card" style="margin-top:20px;">
@@ -604,6 +668,41 @@
         <button id="btn-cdm-cancel" type="button" class="header-btn" style="flex:1; padding:10px; font-weight:700;">Bekor qilish</button>
         <button id="btn-cdm-confirm" type="button" class="btn-primary-large" style="flex:2; margin:0; background:#0284c7;">
           <i class="ti ti-check"></i> <span>Kuryerga jo'natish</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== CANCEL ORDER WITH REASON MODAL ==================== -->
+  <div id="cancel-reason-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-card" style="max-width:440px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h3 style="font-size:18px; font-weight:800; color:#dc2626;">❌ Buyurtmani bekor qilish</h3>
+        <button id="btn-close-cancel-modal" type="button" class="header-btn" style="border:none; font-size:18px;">&times;</button>
+      </div>
+      <p style="font-size:13px; color:var(--text-muted); margin:6px 0 12px;">
+        Buyurtma: <strong id="crm-order-code">#AC-1001</strong> · Summa: <strong id="crm-order-sum">0 so'm</strong>
+      </p>
+
+      <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:8px; padding:10px; margin-bottom:12px; font-size:12px; color:#991b1b; font-weight:700;">
+        ⚠️ Bekor qilish sababi kassa hisobotida va egasiga yuboriladigan Telegram xabarda saqlanadi.
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:14px;">
+        <label class="field-label" style="font-size:12.5px; font-weight:700;">Sababni tanlang:</label>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+          <button type="button" class="header-btn btn-crm-preset" data-reason="Mijoz fikridan qaytdi" style="padding:8px 6px; font-size:12px; font-weight:700; text-align:center;">Mijoz fikridan qaytdi</button>
+          <button type="button" class="header-btn btn-crm-preset" data-reason="Ofitsiant adashdi" style="padding:8px 6px; font-size:12px; font-weight:700; text-align:center;">Ofitsiant adashdi</button>
+          <button type="button" class="header-btn btn-crm-preset" data-reason="Taom tugagan / oshxona yo'q" style="padding:8px 6px; font-size:12px; font-weight:700; text-align:center;">Taom tugagan</button>
+          <button type="button" class="header-btn btn-crm-preset" data-reason="Mijoz telefonga javob bermadi" style="padding:8px 6px; font-size:12px; font-weight:700; text-align:center;">Aloqaga chiqmadi</button>
+        </div>
+        <textarea id="crm-cancel-reason-text" class="input-styled" rows="2" placeholder="Yoki sababni o'zingiz yozing..." style="margin-top:6px;"></textarea>
+      </div>
+
+      <div style="display:flex; gap:10px;">
+        <button id="btn-crm-back" type="button" class="header-btn" style="flex:1; padding:10px; font-weight:700;">Ortga</button>
+        <button id="btn-crm-confirm" type="button" class="btn-primary-large" style="flex:2; margin:0; background:#dc2626;">
+          <i class="ti ti-trash"></i> <span>Bekor qilish</span>
         </button>
       </div>
     </div>

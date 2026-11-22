@@ -33,9 +33,10 @@ except ImportError:
 try:
     from aiogram import Bot, Dispatcher, F, types
     from aiogram.filters import Command
-    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, MenuButtonWebApp, ReplyKeyboardMarkup, WebAppInfo
+    from aiogram.types import FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, MenuButtonWebApp, ReplyKeyboardMarkup, WebAppInfo
 except ImportError:
     Bot = Any
+    FSInputFile = Any
     InlineKeyboardButton = Any
     InlineKeyboardMarkup = Any
     KeyboardButton = Any
@@ -79,6 +80,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 API_ID = os.getenv("API_ID", "").strip()
 API_HASH = os.getenv("API_HASH", "").strip()
 GROUP_CHAT_ID = os.getenv("GROUP_CHAT_ID", "").strip()
+ADMIN_USER_ID = (os.getenv("ADMIN_USER_ID", "") or os.getenv("TELEGRAM_ADMIN_ID", "")).strip()
 WEBAPP_URL = os.getenv("WEBAPP_URL", "http://localhost:8080").strip()
 HOST = os.getenv("HOST", "0.0.0.0").strip()
 PORT = int(os.getenv("PORT", "8080"))
@@ -87,6 +89,15 @@ ADMIN_PASSWORD = (os.getenv("ADMIN_PASSWORD") or "admin123!").strip()
 ADMIN_SESSION_SECRET = (os.getenv("ADMIN_SESSION_SECRET") or "american_caffetteria_secret_2026").strip()
 SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "43200"))
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+
+# Xodimlar rollari va tezkor 4-raqamli PIN-kodlar
+STAFF_PINS = {
+    os.getenv("PIN_OWNER", "7777"): {"role": "admin", "name": "Egasi (Admin)"},
+    os.getenv("PIN_CASHIER", "1111"): {"role": "cashier", "name": "Kassir"},
+    os.getenv("PIN_WAITER", "2222"): {"role": "waiter", "name": "Ofitsiant"},
+    os.getenv("PIN_KITCHEN", "3333"): {"role": "kitchen", "name": "Oshpaz"},
+    os.getenv("PIN_COURIER", "4444"): {"role": "courier", "name": "Kuryer"},
+}
 ALLOWED_ORIGINS = {
     o.strip()
     for o in os.getenv(
@@ -1409,25 +1420,44 @@ async def api_admin_login(request: web.Request) -> web.Response:
         body = await request.json()
     except Exception:
         body = {}
-    username = str(body.get("username") or "admin").strip().lower()
-    password = str(body.get("password") or "").strip()
 
-    valid_passwords = {ADMIN_PASSWORD}
-    valid_users = {ADMIN_USERNAME.lower(), "admin", "operator", "kassa"}
-    pass_matches = password in valid_passwords
-    user_matches = username in valid_users
+    pin_input = str(body.get("pin") or "").strip()
+    role = "admin"
+    display_name = "admin"
 
-    if not (user_matches and pass_matches):
-        record_failed_login(client_ip)
-        logger.warning("Kirishda xatolik: username='%s', IP=%s", username, client_ip)
-        return web.json_response(
-            {"ok": False, "error": "Login yoki parol noto'g'ri / Неверный логин или пароль."},
-            status=401,
-        )
+    if pin_input:
+        if pin_input in STAFF_PINS:
+            staff_info = STAFF_PINS[pin_input]
+            role = staff_info["role"]
+            display_name = staff_info["name"]
+        else:
+            record_failed_login(client_ip)
+            logger.warning("PIN xato: IP=%s", client_ip)
+            return web.json_response(
+                {"ok": False, "error": "Noto'g'ri PIN-kod / Неверный PIN-код."},
+                status=401,
+            )
+    else:
+        username = str(body.get("username") or "admin").strip().lower()
+        password = str(body.get("password") or "").strip()
+        valid_passwords = {ADMIN_PASSWORD}
+        valid_users = {ADMIN_USERNAME.lower(), "admin", "operator", "kassa"}
+        pass_matches = password in valid_passwords
+        user_matches = username in valid_users
+
+        if not (user_matches and pass_matches):
+            record_failed_login(client_ip)
+            logger.warning("Kirishda xatolik: username='%s', IP=%s", username, client_ip)
+            return web.json_response(
+                {"ok": False, "error": "Login yoki parol noto'g'ri / Неверный логин или пароль."},
+                status=401,
+            )
+        role = "admin"
+        display_name = username
 
     LOGIN_ATTEMPTS.pop(client_ip, None)
-    token = create_session_token("admin")
-    resp = web.json_response({"ok": True, "username": "admin", "token": token})
+    token = create_session_token(f"{role}:{display_name}")
+    resp = web.json_response({"ok": True, "username": display_name, "role": role, "token": token})
     resp.set_cookie(
         COOKIE_NAME,
         token,
@@ -1437,7 +1467,7 @@ async def api_admin_login(request: web.Request) -> web.Response:
         samesite="Lax",
         path="/",
     )
-    logger.info("Kassaga muvaffaqiyatli kirildi: username='%s'", username)
+    logger.info("Kassaga muvaffaqiyatli kirildi: role='%s', user='%s'", role, display_name)
     return resp
 async def api_admin_logout(request: web.Request) -> web.Response:
     if not check_csrf_protection(request):
@@ -1453,10 +1483,14 @@ async def api_admin_me(request: web.Request) -> web.Response:
             token = auth[7:].strip()
     if not token:
         token = request.query.get("token")
-    username = verify_session_token(token)
-    if not username:
+    raw_ident = verify_session_token(token)
+    if not raw_ident:
         return web.json_response({"ok": False, "authenticated": False}, status=401)
-    return web.json_response({"ok": True, "authenticated": True, "username": username})
+    role = "admin"
+    display_name = raw_ident
+    if ":" in raw_ident:
+        role, display_name = raw_ident.split(":", 1)
+    return web.json_response({"ok": True, "authenticated": True, "username": display_name, "role": role})
 def compute_stats(orders: List[Dict[str, Any]], target_date: str) -> Dict[str, Any]:
     new_count = 0
     in_work_count = 0
@@ -1716,6 +1750,29 @@ async def api_admin_update_status(request: web.Request) -> web.Response:
         except Exception as e:
             logger.warning("Mijozga status bildirishnomasini yuborishda xatolik #%s: %s", order_id, e)
 
+    # Anti-frod: Buyurtma bekor qilinganda egasiga/guruhga tezkor ogohlantirish
+    if new_status == "cancelled" and bot_instance:
+        alert_target = ADMIN_USER_ID or GROUP_CHAT_ID
+        if alert_target:
+            try:
+                ord_code = serialized.get("order_code") or f"#{order_id}"
+                cust_or_table = serialized.get("customer_name") or serialized.get("address") or "Zal"
+                tot = serialized.get("total") or serialized.get("total_amount") or 0
+                reason_txt = cancel_reason or "Sabab ko'rsatilmadi"
+                staff_name = serialized.get("waiter_name") or "Kassir / Operator"
+                alert_msg = (
+                    f"🚨 <b>DIQQAT: BUYURTMA BEKOR QILINDI (Anti-Frod)!</b>\n\n"
+                    f"🔢 <b>Buyurtma:</b> <code>{html.escape(ord_code)}</code>\n"
+                    f"🪑 <b>Stol / Mijoz:</b> {html.escape(str(cust_or_table))}\n"
+                    f"💰 <b>Summa:</b> {tot:,.0f} so'm\n"
+                    f"👤 <b>Xodim:</b> {html.escape(str(staff_name))}\n"
+                    f"⚠️ <b>Sabab:</b> <b>{html.escape(reason_txt)}</b>\n"
+                    f"⏰ <b>Vaqt:</b> {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}"
+                )
+                await bot_instance.send_message(chat_id=int(alert_target), text=alert_msg, parse_mode="HTML")
+            except Exception as e:
+                logger.warning("Admin egasiga bekor qilish ogohlantirishini yuborishda xatolik: %s", e)
+
     return web.json_response({"ok": True, "order": serialized})
 async def api_admin_stats(request: web.Request) -> web.Response:
     if not is_admin_authenticated(request):
@@ -1737,6 +1794,7 @@ async def api_admin_stats(request: web.Request) -> web.Response:
         shift_orders_count = 0
         status_counts = {"new": 0, "preparing": 0, "cooking": 0, "delivering": 0, "completed": 0, "cancelled": 0}
         dish_sales: Dict[str, Dict[str, Any]] = {}
+        waiter_sales: Dict[str, Dict[str, Any]] = {}
         for r in rows:
             order_date_str = r["created_at_utc"] or r["created_at"] or ""
             order_shift = get_order_shift_date(order_date_str)
@@ -1751,9 +1809,11 @@ async def api_admin_stats(request: web.Request) -> web.Response:
                 row_keys = set(r.keys())
                 pay_st = str(r["payment_status"] or "pending").lower() if "payment_status" in row_keys else "pending"
                 pay_m = str(r["payment_method"] or "cash").lower() if "payment_method" in row_keys else "cash"
+                deliv_type = str(r["delivery_type"] or "delivery").lower()
                 comm = str(r["comment"] or "").lower()
 
-                if pay_st != "paid" and (pay_m in ("unpaid", "card_terminal") or r["delivery_type"] == "dine_in") and st != "completed":
+                # Faqatgina dine_in (Zal) stollari hisoblanadi (yetkazib berishdagi card_terminal adashtirilmaydi)
+                if deliv_type == "dine_in" and pay_st != "paid" and st not in ("completed", "cancelled"):
                     unpaid_open_tables_revenue += tot
                     unpaid_open_tables_count += 1
                 elif pay_st == "paid":
@@ -1765,6 +1825,17 @@ async def api_admin_stats(request: web.Request) -> web.Response:
                         online_revenue += tot
                     else:
                         cash_revenue += tot
+
+                    # Ofitsiantlar hisoboti
+                    row_waiter = str(r["waiter_name"] or "").strip() if "waiter_name" in row_keys else ""
+                    if not row_waiter:
+                        row_waiter = "Kassa / Umumiy"
+                    if row_waiter not in waiter_sales:
+                        waiter_sales[row_waiter] = {"waiter_name": row_waiter, "orders_count": 0, "total_sales": 0, "service_fee": 0}
+                    waiter_sales[row_waiter]["orders_count"] += 1
+                    waiter_sales[row_waiter]["total_sales"] += tot
+                    row_sfee = int(r["service_fee"] or 0) if "service_fee" in row_keys else 0
+                    waiter_sales[row_waiter]["service_fee"] += row_sfee
                 try:
                     items = json.loads(r["items_json"] or "[]")
                     for it in items:
@@ -1782,6 +1853,7 @@ async def api_admin_stats(request: web.Request) -> web.Response:
         cash_out_total = sum(int(op["amount"]) for op in cash_ops if op["op_type"] == "cash_out")
         cash_in_drawer = cash_revenue + cash_in_total - cash_out_total
         top_dishes = sorted(dish_sales.values(), key=lambda x: (x["qty"], x["revenue"]), reverse=True)[:5]
+        waiter_stats = sorted(waiter_sales.values(), key=lambda x: x["total_sales"], reverse=True)
         return web.json_response({
             "ok": True,
             "today": target_shift,
@@ -1800,6 +1872,7 @@ async def api_admin_stats(request: web.Request) -> web.Response:
             "avg_check": int(total_revenue / max(1, valid_orders)),
             "status_counts": status_counts,
             "top_dishes": top_dishes,
+            "waiter_stats": waiter_stats,
             "cash_operations": [dict(op) for op in cash_ops],
         })
 async def api_create_reservation(request: web.Request) -> web.Response:
@@ -2358,6 +2431,37 @@ async def handle_webapp_data(message: types.Message, bot: Bot):
         await message.answer("⚠️ Buyurtmani qabul qilishda xatolik yuz berdi. Iltimos, saytdan qayta urinib ko'ring.")
 
 
+async def api_admin_trigger_backup(request: web.Request) -> web.Response:
+    if not is_admin_authenticated(request):
+        return web.json_response({"ok": False, "error": "Avtorizatsiya talab qilinadi."}, status=401)
+    if not DB_PATH.exists():
+        return web.json_response({"ok": False, "error": "Baza fayli topilmadi."}, status=404)
+    download = request.query.get("download") == "1"
+    bot_instance = request.app.get("bot")
+    backup_filename = f"cafe_bot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+    if download:
+        return web.FileResponse(
+            path=str(DB_PATH),
+            headers={"Content-Disposition": f'attachment; filename="{backup_filename}"'}
+        )
+    target_chat = ADMIN_USER_ID or GROUP_CHAT_ID
+    if bot_instance and target_chat:
+        try:
+            doc = FSInputFile(str(DB_PATH), filename=backup_filename)
+            await bot_instance.send_document(
+                chat_id=int(target_chat),
+                document=doc,
+                caption=f"📦 <b>Zaxira nusxasi (cafe_bot.db)</b>\n📅 Sana: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n☕ American Caffetteria"
+            )
+            return web.json_response({"ok": True, "message": "Zaxira nusxasi Telegram orqali yuborildi."})
+        except Exception as e:
+            logger.warning("Backup yuborishda xatolik: %s", e)
+    return web.FileResponse(
+        path=str(DB_PATH),
+        headers={"Content-Disposition": f'attachment; filename="{backup_filename}"'}
+    )
+
+
 # =====================================================================
 # SERVERNI ISHGA TUSHIRISH (AIOHTTP + AIOGRAM)
 # =====================================================================
@@ -2390,6 +2494,8 @@ async def main():
     app.router.add_patch("/api/admin/orders/{id}/status", api_admin_update_status)
     app.router.add_get("/api/admin/cash-operations", api_admin_get_cash_operations)
     app.router.add_post("/api/admin/cash-operations", api_admin_add_cash_operation)
+    app.router.add_get("/api/admin/backup", api_admin_trigger_backup)
+    app.router.add_post("/api/admin/backup", api_admin_trigger_backup)
     app.router.add_get("/api/admin/stream", api_admin_sse_stream)
     app.router.add_get("/api/stream", api_public_sse_stream)
 
@@ -2433,13 +2539,40 @@ async def main():
                     logger.warning("Telegram polling tarmog'ida xatolik: %s. 5 soniyadan so'ng qayta uriniladi...", exc)
                     await asyncio.sleep(5)
 
+        async def run_daily_backup_scheduler():
+            last_date = ""
+            while True:
+                try:
+                    now = datetime.now()
+                    today = now.strftime("%Y-%m-%d")
+                    # Har kuni ertalab 05:00 da smena yopilganda avto-backup
+                    if now.hour == 5 and last_date != today:
+                        target_chat = ADMIN_USER_ID or GROUP_CHAT_ID
+                        if target_chat and DB_PATH.exists():
+                            doc = FSInputFile(str(DB_PATH), filename=f"cafe_bot_night_{today}.db")
+                            await bot_instance.send_document(
+                                chat_id=int(target_chat),
+                                document=doc,
+                                caption=f"🌙 <b>Avtomatik tungi zaxira nusxasi (cafe_bot.db)</b>\n📅 Smena: {get_tashkent_shift_date()}\n⏰ Vaqt: 05:00\n☕ American Caffetteria"
+                            )
+                            last_date = today
+                            logger.info("Tungi zaxira nusxasi Telegramga yuborildi.")
+                    await asyncio.sleep(60)
+                except asyncio.CancelledError:
+                    break
+                except Exception as exc:
+                    logger.warning("Backup scheduler xatosi: %s", exc)
+                    await asyncio.sleep(60)
+
         polling_task = asyncio.create_task(run_bot_polling())
+        backup_task = asyncio.create_task(run_daily_backup_scheduler())
         try:
             await asyncio.Event().wait()
         except (KeyboardInterrupt, asyncio.CancelledError):
             pass
         finally:
             polling_task.cancel()
+            backup_task.cancel()
             try:
                 await bot_instance.session.close()
             except Exception:
