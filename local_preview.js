@@ -229,6 +229,31 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
     cookieHeader.includes('ac_admin_session=ac_jwt_') ||
     queryToken.startsWith('ac_jwt_');
 
+  let authRole = null;
+  let authUser = null;
+  if (isAdminAuthed) {
+    authRole = 'admin';
+    authUser = 'admin';
+    let rawTok = authHeader.startsWith('Bearer ac_jwt_') ? authHeader.slice(14) : '';
+    if (!rawTok && cookieHeader.includes('ac_admin_session=ac_jwt_')) {
+      const m = cookieHeader.match(/ac_admin_session=ac_jwt_([^;]+)/);
+      if (m) rawTok = m[1];
+    }
+    if (!rawTok && queryToken.startsWith('ac_jwt_')) {
+      rawTok = queryToken.slice(7);
+    }
+    if (rawTok) {
+      try {
+        const decoded = Buffer.from(rawTok, 'base64').toString('utf-8');
+        const parts = decoded.split(':');
+        if (parts.length >= 2) {
+          authRole = parts[0];
+          authUser = parts[1];
+        }
+      } catch (_) {}
+    }
+  }
+
   if (pathname === '/api/admin/login' && req.method === 'POST') {
     const pin = String(body.pin || '').trim();
     let user = 'admin';
@@ -284,27 +309,8 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       res.end(JSON.stringify({ ok: false, authenticated: false }));
       return;
     }
-    let role = 'admin';
-    let user = 'admin';
-    const authH = req.headers.authorization || '';
-    const cookH = req.headers.cookie || '';
-    let rawTok = authH.startsWith('Bearer ac_jwt_') ? authH.slice(14) : '';
-    if (!rawTok && cookH.includes('ac_admin_session=ac_jwt_')) {
-      const m = cookH.match(/ac_admin_session=ac_jwt_([^;]+)/);
-      if (m) rawTok = m[1];
-    }
-    if (rawTok) {
-      try {
-        const decoded = Buffer.from(rawTok, 'base64').toString('utf-8');
-        const parts = decoded.split(':');
-        if (parts.length >= 2) {
-          role = parts[0];
-          user = parts[1];
-        }
-      } catch (_) {}
-    }
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, authenticated: true, username: user, role }));
+    res.end(JSON.stringify({ ok: true, authenticated: true, username: authUser || 'admin', role: authRole || 'admin' }));
     return;
   }
 
@@ -312,6 +318,11 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
     if (!isAdminAuthed) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: 'Avtorizatsiya talab qilinadi' }));
+      return;
+    }
+    if (authRole !== 'admin' && authRole !== 'owner') {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Faqat boshqaruvchi (admin) baza zaxira nusxasini yuklab olishi mumkin' }));
       return;
     }
     const isDownload = parsedReqUrl.query && parsedReqUrl.query.download === '1';
@@ -547,6 +558,11 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       res.end(JSON.stringify({ ok: false, error: 'Avtorizatsiya talab qilinadi' }));
       return;
     }
+    if (!['admin', 'owner', 'cashier'].includes(authRole)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: "Faqat kassir va boshqaruvchi to'lovni qabul qila oladi" }));
+      return;
+    }
     const ordId = parseInt(orderPayMatch[1], 10);
     let target = mockOrders.find((o) => o.id === ordId);
     if (!target) {
@@ -729,6 +745,11 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       res.end(JSON.stringify({ ok: false, error: 'Avtorizatsiya talab qilinadi' }));
       return;
     }
+    if (!['admin', 'owner', 'cashier'].includes(authRole)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Faqat boshqaruvchi va kassir ruxsatga ega' }));
+      return;
+    }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, operations: mockCashOps, shift_date: new Date().toISOString().slice(0, 10) }));
     return;
@@ -738,6 +759,11 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
     if (!isAdminAuthed) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: 'Avtorizatsiya talab qilinadi' }));
+      return;
+    }
+    if (!['admin', 'owner', 'cashier'].includes(authRole)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Faqat boshqaruvchi va kassir ruxsatga ega' }));
       return;
     }
     const op = {
@@ -779,6 +805,11 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
     if (!isAdminAuthed) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: 'Avtorizatsiya talab qilinadi' }));
+      return;
+    }
+    if (!['admin', 'owner', 'cashier'].includes(authRole)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: "Faqat boshqaruvchi va kassir hisobotlarni ko'ra oladi" }));
       return;
     }
     let totalRev = 0, cashRev = 0, cardRev = 0, onlineRev = 0, validCount = 0;

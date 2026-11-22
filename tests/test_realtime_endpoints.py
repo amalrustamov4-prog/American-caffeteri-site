@@ -267,8 +267,26 @@ def main():
         assert "unpaid_open_tables_count" in d_st, f"unpaid_open_tables_count missing in stats: {d_st}"
         print("18. GET /api/admin/stats (waiter_stats & unpaid_open_tables_count) -> SUCCESS")
 
+        # 19. Backend Role-Based Access Control (RBAC) Enforcement
+        courier_hdr = {"Authorization": f"Bearer {d_pin_c['token']}"}
+        # Courier cannot download backup (403 Forbidden)
+        st_c_bk, d_c_bk = req_json(f"{base}/api/admin/backup?download=1", "GET", None, courier_hdr)
+        assert st_c_bk == 403, f"Expected 403 for courier downloading backup, got {st_c_bk}: {d_c_bk}"
+
+        # Courier cannot view stats (403 Forbidden)
+        st_c_st, d_c_st = req_json(f"{base}/api/admin/stats", "GET", None, courier_hdr)
+        assert st_c_st == 403, f"Expected 403 for courier viewing stats, got {st_c_st}: {d_c_st}"
+
+        # Waiter login and attempting to pay order (403 Forbidden)
+        st_pin_w, d_pin_w = req_json(f"{base}/api/admin/login", "POST", {"pin": "2222"})
+        assert st_pin_w == 200 and d_pin_w.get("role") == "waiter", f"Waiter login failed: {d_pin_w}"
+        waiter_hdr = {"Authorization": f"Bearer {d_pin_w['token']}"}
+        st_w_pay, d_w_pay = req_json(f"{base}/api/orders/{can_ord_id}/pay", "POST", {"payment_method": "cash"}, waiter_hdr)
+        assert st_w_pay == 403, f"Expected 403 for waiter paying order, got {st_w_pay}: {d_w_pay}"
+        print("19. Backend RBAC checks (courier backup/stats 403 & waiter pay 403) -> SUCCESS")
+
         print("\n==========================================")
-        print("  NATIJA: 18/18 PASS (100% SUCCESS)       ")
+        print("  NATIJA: 19/19 PASS (100% SUCCESS)       ")
         print("==========================================\n")
     finally:
         proc.terminate()

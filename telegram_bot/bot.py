@@ -1004,7 +1004,7 @@ def verify_session_token(token: Optional[str]) -> Optional[str]:
     if not hmac.compare_digest(sig, expected_sig):
         return None
     return username
-def is_admin_authenticated(request: web.Request) -> bool:
+def get_authenticated_user_info(request: web.Request) -> Tuple[Optional[str], Optional[str]]:
     token = request.cookies.get(COOKIE_NAME)
     if not token:
         auth = request.headers.get("Authorization", "")
@@ -1012,7 +1012,18 @@ def is_admin_authenticated(request: web.Request) -> bool:
             token = auth[7:].strip()
     if not token:
         token = request.query.get("token")
-    return verify_session_token(token) is not None
+    raw_ident = verify_session_token(token)
+    if not raw_ident:
+        return None, None
+    role = "admin"
+    username = raw_ident
+    if ":" in raw_ident:
+        role, username = raw_ident.split(":", 1)
+    return role, username
+
+def is_admin_authenticated(request: web.Request) -> bool:
+    role, _ = get_authenticated_user_info(request)
+    return role is not None
 
 def is_login_rate_limited(ip: str) -> bool:
     now = time.time()
@@ -1304,8 +1315,11 @@ async def api_order_append(request: web.Request) -> web.Response:
     return await handle_order_append_logic(request, int(order_id), payload)
 
 async def api_order_pay(request: web.Request) -> web.Response:
-    if not is_admin_authenticated(request):
+    role, username = get_authenticated_user_info(request)
+    if not role:
         return web.json_response({"ok": False, "error": "Ruxsat berilmagan / Unauthorized."}, status=401)
+    if role not in ("admin", "owner", "cashier"):
+        return web.json_response({"ok": False, "error": "Faqat kassir va boshqaruvchi to'lovni qabul qila oladi."}, status=403)
     if not check_csrf_protection(request):
         return web.json_response({"ok": False, "error": "Sessiya xavfsizlik tekshiruvi / CSRF check failed."}, status=403)
     order_id = request.match_info.get("id", "")
@@ -1476,21 +1490,10 @@ async def api_admin_logout(request: web.Request) -> web.Response:
     resp.del_cookie(COOKIE_NAME, path="/")
     return resp
 async def api_admin_me(request: web.Request) -> web.Response:
-    token = request.cookies.get(COOKIE_NAME)
-    if not token:
-        auth = request.headers.get("Authorization", "")
-        if auth.startswith("Bearer "):
-            token = auth[7:].strip()
-    if not token:
-        token = request.query.get("token")
-    raw_ident = verify_session_token(token)
-    if not raw_ident:
+    role, username = get_authenticated_user_info(request)
+    if not role:
         return web.json_response({"ok": False, "authenticated": False}, status=401)
-    role = "admin"
-    display_name = raw_ident
-    if ":" in raw_ident:
-        role, display_name = raw_ident.split(":", 1)
-    return web.json_response({"ok": True, "authenticated": True, "username": display_name, "role": role})
+    return web.json_response({"ok": True, "authenticated": True, "username": username, "role": role})
 def compute_stats(orders: List[Dict[str, Any]], target_date: str) -> Dict[str, Any]:
     new_count = 0
     in_work_count = 0
@@ -1775,8 +1778,11 @@ async def api_admin_update_status(request: web.Request) -> web.Response:
 
     return web.json_response({"ok": True, "order": serialized})
 async def api_admin_stats(request: web.Request) -> web.Response:
-    if not is_admin_authenticated(request):
-        return web.json_response({"ok": False, "error": "Требуется авторизация."}, status=401)
+    role, username = get_authenticated_user_info(request)
+    if not role:
+        return web.json_response({"ok": False, "error": "Avtorizatsiya talab qilinadi / Требуется авторизация."}, status=401)
+    if role not in ("admin", "owner", "cashier"):
+        return web.json_response({"ok": False, "error": "Faqat boshqaruvchi va kassir hisobotlarni ko'ra oladi."}, status=403)
     target_shift = request.query.get("date") or get_tashkent_shift_date()
     with get_db_connection() as conn:
         rows = conn.execute("SELECT * FROM orders ORDER BY id DESC").fetchall()
@@ -1991,8 +1997,11 @@ async def api_toggle_stoplist(request: web.Request) -> web.Response:
     await broadcast_sse_event("stoplist_updated", {"stoplist": stopped_list, "item_id": item_id, "stopped": is_stopped})
     return web.json_response({"ok": True, "item_id": item_id, "stopped": is_stopped, "stoplist": stopped_list})
 async def api_admin_get_cash_operations(request: web.Request) -> web.Response:
-    if not is_admin_authenticated(request):
+    role, username = get_authenticated_user_info(request)
+    if not role:
         return web.json_response({"ok": False, "error": "Avtorizatsiya talab qilinadi"}, status=401)
+    if role not in ("admin", "owner", "cashier"):
+        return web.json_response({"ok": False, "error": "Faqat boshqaruvchi va kassir ruxsatga ega."}, status=403)
     shift_date = request.query.get("date") or get_tashkent_shift_date()
     with get_db_connection() as conn:
         rows = conn.execute(
@@ -2003,8 +2012,11 @@ async def api_admin_get_cash_operations(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "operations": ops, "shift_date": shift_date})
 
 async def api_admin_add_cash_operation(request: web.Request) -> web.Response:
-    if not is_admin_authenticated(request):
+    role, username = get_authenticated_user_info(request)
+    if not role:
         return web.json_response({"ok": False, "error": "Avtorizatsiya talab qilinadi"}, status=401)
+    if role not in ("admin", "owner", "cashier"):
+        return web.json_response({"ok": False, "error": "Faqat boshqaruvchi va kassir ruxsatga ega."}, status=403)
     try:
         body = await request.json()
     except Exception:
@@ -2432,13 +2444,17 @@ async def handle_webapp_data(message: types.Message, bot: Bot):
 
 
 async def api_admin_trigger_backup(request: web.Request) -> web.Response:
-    if not is_admin_authenticated(request):
+    role, username = get_authenticated_user_info(request)
+    if not role:
         return web.json_response({"ok": False, "error": "Avtorizatsiya talab qilinadi."}, status=401)
+    if role not in ("admin", "owner"):
+        return web.json_response({"ok": False, "error": "Faqat boshqaruvchi (admin) baza zaxira nusxasini yuklab olishi mumkin."}, status=403)
     if not DB_PATH.exists():
         return web.json_response({"ok": False, "error": "Baza fayli topilmadi."}, status=404)
     download = request.query.get("download") == "1"
     bot_instance = request.app.get("bot")
-    backup_filename = f"cafe_bot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+    tashkent_now = datetime.now(timezone(timedelta(hours=5)))
+    backup_filename = f"cafe_bot_{tashkent_now.strftime('%Y%m%d_%H%M%S')}.db"
     if download:
         return web.FileResponse(
             path=str(DB_PATH),
@@ -2451,7 +2467,7 @@ async def api_admin_trigger_backup(request: web.Request) -> web.Response:
             await bot_instance.send_document(
                 chat_id=int(target_chat),
                 document=doc,
-                caption=f"📦 <b>Zaxira nusxasi (cafe_bot.db)</b>\n📅 Sana: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n☕ American Caffetteria"
+                caption=f"📦 <b>Zaxira nusxasi (cafe_bot.db)</b>\n📅 Sana: {tashkent_now.strftime('%Y-%m-%d %H:%M:%S')}\n☕ American Caffetteria"
             )
             return web.json_response({"ok": True, "message": "Zaxira nusxasi Telegram orqali yuborildi."})
         except Exception as e:
@@ -2541,11 +2557,12 @@ async def main():
 
         async def run_daily_backup_scheduler():
             last_date = ""
+            tashkent_tz = timezone(timedelta(hours=5))
             while True:
                 try:
-                    now = datetime.now()
+                    now = datetime.now(tashkent_tz)
                     today = now.strftime("%Y-%m-%d")
-                    # Har kuni ertalab 05:00 da smena yopilganda avto-backup
+                    # Har kuni ertalab 05:00 da (Toshkent vaqti UTC+5) smena yopilganda avto-backup
                     if now.hour == 5 and last_date != today:
                         target_chat = ADMIN_USER_ID or GROUP_CHAT_ID
                         if target_chat and DB_PATH.exists():
@@ -2553,7 +2570,7 @@ async def main():
                             await bot_instance.send_document(
                                 chat_id=int(target_chat),
                                 document=doc,
-                                caption=f"🌙 <b>Avtomatik tungi zaxira nusxasi (cafe_bot.db)</b>\n📅 Smena: {get_tashkent_shift_date()}\n⏰ Vaqt: 05:00\n☕ American Caffetteria"
+                                caption=f"🌙 <b>Avtomatik tungi zaxira nusxasi (cafe_bot.db)</b>\n📅 Smena: {get_tashkent_shift_date()}\n⏰ Vaqt: 05:00 (Toshkent)\n☕ American Caffetteria"
                             )
                             last_date = today
                             logger.info("Tungi zaxira nusxasi Telegramga yuborildi.")
