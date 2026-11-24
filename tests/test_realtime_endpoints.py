@@ -36,8 +36,24 @@ def main():
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    time.sleep(1.0)
     base = "http://127.0.0.1:3456"
+
+    # Wait for server to start with polling retry (up to 10 seconds)
+    t_start = time.time()
+    started = False
+    while time.time() - t_start < 10:
+        if proc.poll() is not None:
+            out, err = proc.communicate()
+            raise RuntimeError(f"local_preview.js exited prematurely:\n{err.decode()}")
+        try:
+            st_h, d_h = req_json(f"{base}/api/health", "GET")
+            if st_h == 200:
+                started = True
+                break
+        except Exception:
+            time.sleep(0.2)
+    if not started:
+        raise RuntimeError("local_preview.js failed to start within 10 seconds")
 
     try:
         # 0. GET /api/health (Healthcheck verification)

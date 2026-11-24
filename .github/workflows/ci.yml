@@ -103,7 +103,7 @@ jobs:
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug -Dorg.gradle.java.home="$JAVA_HOME" --no-daemon
 
       - name: Upload American_Caffetteria.apk artifact
         uses: actions/upload-artifact@v4

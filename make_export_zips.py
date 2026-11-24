@@ -31,7 +31,6 @@ EXCLUDE_EXTS = {
     ".sqlite",
     ".sqlite3",
     ".xcarchive",
-    ".ipa",
     ".app",
 }
 

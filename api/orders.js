@@ -10,19 +10,31 @@ function loadServerMenuPrices() {
     if (m) {
       const cleaned = m[1].replace(/^\s*\/\/.*$/gm, '');
       const list = JSON.parse(cleaned);
+      const prefixes = ['drink_', 'food_', 'burger_', 'lavash_', 'pizza_', 'snack_', 'dessert_', 'sauce_'];
       for (const it of list) {
         if (!it || !it.id) continue;
         const basePrice = Number(it.price || 0);
         const nameRu = (it.name && (it.name.ru || it.name.uz)) || it.id;
-        catalog[it.id] = { price: basePrice, name: nameRu };
+        const registerEntry = (k, entry) => {
+          catalog[k] = entry;
+          for (const pfx of prefixes) {
+            if (k.startsWith(pfx)) {
+              catalog[k.slice(pfx.length)] = entry;
+            } else {
+              catalog[`${pfx}${k}`] = entry;
+            }
+          }
+        };
+
+        registerEntry(it.id, { price: basePrice, name: nameRu });
         if (Array.isArray(it.sizes)) {
           it.sizes.forEach((sz, idx) => {
             const sKey = String(sz.key ?? idx);
             const sPrice = Number(sz.price || basePrice);
             const sLbl = (sz.label && (sz.label.ru || sz.label.uz)) || sKey;
             const entry = { price: sPrice, name: `${nameRu} (${sLbl})` };
-            catalog[`${it.id}_${sKey}`] = entry;
-            catalog[`${it.id}_${idx}`] = entry;
+            registerEntry(`${it.id}_${sKey}`, entry);
+            registerEntry(`${it.id}_${idx}`, entry);
           });
         }
       }
@@ -173,6 +185,9 @@ export default async function handler(req, res) {
     if (discount > 0) {
       orderCard += `🎁 <b>Chegirma (${escapeHtml(promoCode)}):</b> -${discount.toLocaleString('ru-RU')} so'm\n`;
     }
+    if (serviceFee > 0) {
+      orderCard += `🍽 <b>Xizmat haqi (10%):</b> ${serviceFee.toLocaleString('ru-RU')} so'm\n`;
+    }
     if (deliveryFee > 0) {
       orderCard += `🛵 <b>Yetkazib berish:</b> ${deliveryFee.toLocaleString('ru-RU')} so'm\n`;
     } else if (deliveryType === 'delivery') {
@@ -200,10 +215,11 @@ export default async function handler(req, res) {
                   { text: '👨‍🍳 Oshxonada', callback_data: `ordst:${numericId}:cooking` }
                 ],
                 [
-                  { text: '🛵 Kuryerda', callback_data: `ordst:${numericId}:delivering` },
-                  { text: '🟢 Yetkazildi', callback_data: `ordst:${numericId}:completed` }
+                  { text: '🔔 Tayyor', callback_data: `ordst:${numericId}:ready` },
+                  { text: '🛵 Kuryerda', callback_data: `ordst:${numericId}:delivering` }
                 ],
                 [
+                  { text: '🟢 Yetkazildi', callback_data: `ordst:${numericId}:completed` },
                   { text: '❌ Bekor qilish', callback_data: `ordst:${numericId}:cancelled` }
                 ]
               ]
@@ -232,6 +248,7 @@ export default async function handler(req, res) {
       discount,
       promo_code: promoCode,
       delivery_fee: deliveryFee,
+      service_fee: serviceFee,
       total: totalAmount,
       total_amount: totalAmount,
       status: 'new',

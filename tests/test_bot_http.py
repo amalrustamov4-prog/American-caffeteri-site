@@ -64,8 +64,22 @@ def main():
     )
 
     try:
-        # Wait for server to start
-        time.sleep(2.0)
+        # Wait for server to start with polling retry (up to 15 seconds)
+        started = False
+        t_start = time.time()
+        while time.time() - t_start < 15:
+            if proc.poll() is not None:
+                out, err = proc.communicate()
+                raise RuntimeError(f"bot.py exited prematurely with code {proc.returncode}:\nSTDOUT:\n{out.decode()}\nSTDERR:\n{err.decode()}")
+            try:
+                st_h, d_h, _ = req_json(f"{base}/api/health", "GET")
+                if st_h == 200:
+                    started = True
+                    break
+            except Exception:
+                time.sleep(0.3)
+        if not started:
+            raise RuntimeError("bot.py failed to start and respond on /api/health within 15 seconds")
 
         # 1. GET /api/health
         st_h, d_h, _ = req_json(f"{base}/api/health", "GET")
