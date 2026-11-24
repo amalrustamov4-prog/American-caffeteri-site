@@ -292,9 +292,9 @@
 
         let itemsText = "";
         if (Array.isArray(ord.items)) {
-          itemsText = ord.items.map((i, idx) => `${idx + 1}. ${i.name || "Taom"} × ${i.qty || 1}`).join("<br/>");
+          itemsText = ord.items.map((i, idx) => `${idx + 1}. ${escapeHtml(i.name || "Taom")} × ${escapeHtml(String(i.qty || 1))}`).join("<br/>");
         } else {
-          itemsText = ord.order_data || "Taomlar ro'yxati";
+          itemsText = escapeHtml(ord.order_data || "Taomlar ro'yxati");
         }
 
         return `

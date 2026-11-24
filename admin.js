@@ -787,6 +787,11 @@
       if (btnStoplist) btnStoplist.style.display = "none";
       switchTab("pos");
     }
+
+    const btnBackup = document.getElementById("btn-download-db-backup");
+    if (btnBackup) {
+      btnBackup.style.display = (role === "admin" || role === "owner") ? "" : "none";
+    }
   }
 
   async function checkAuth() {

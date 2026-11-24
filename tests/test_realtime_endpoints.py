@@ -285,8 +285,27 @@ def main():
         assert st_w_pay == 403, f"Expected 403 for waiter paying order, got {st_w_pay}: {d_w_pay}"
         print("19. Backend RBAC checks (courier backup/stats 403 & waiter pay 403) -> SUCCESS")
 
+        # 20. RBAC PATCH /status bypass prevention tests
+        # Courier cannot cancel orders via PATCH /status (403)
+        st_c_canc, _ = req_json(f"{base}/api/admin/orders/{ord_id}/status", "PATCH", {"status": "cancelled", "cancel_reason": "Hack"}, courier_hdr)
+        assert st_c_canc == 403, f"Expected 403 for courier cancelling via PATCH /status, got {st_c_canc}"
+
+        # Waiter cannot confirm payment via PATCH /status (403)
+        st_w_pay_st, _ = req_json(f"{base}/api/admin/orders/{ord_id}/status", "PATCH", {"payment_status": "paid"}, waiter_hdr)
+        assert st_w_pay_st == 403, f"Expected 403 for waiter marking paid via PATCH /status, got {st_w_pay_st}"
+
+        # Kitchen login (PIN 3333) and attempting to cancel or mark paid via PATCH /status (403)
+        st_pin_k, d_pin_k = req_json(f"{base}/api/admin/login", "POST", {"pin": "3333"})
+        assert st_pin_k == 200 and d_pin_k.get("role") == "kitchen", f"Kitchen login failed: {d_pin_k}"
+        kitchen_hdr = {"Authorization": f"Bearer {d_pin_k['token']}"}
+        st_k_canc, _ = req_json(f"{base}/api/admin/orders/{ord_id}/status", "PATCH", {"status": "cancelled"}, kitchen_hdr)
+        assert st_k_canc == 403, f"Expected 403 for kitchen cancelling order, got {st_k_canc}"
+        st_k_pay, _ = req_json(f"{base}/api/admin/orders/{ord_id}/status", "PATCH", {"payment_status": "paid"}, kitchen_hdr)
+        assert st_k_pay == 403, f"Expected 403 for kitchen marking paid, got {st_k_pay}"
+        print("20. RBAC PATCH /status bypass prevention (kitchen/courier/waiter restricted) -> SUCCESS")
+
         print("\n==========================================")
-        print("  NATIJA: 19/19 PASS (100% SUCCESS)       ")
+        print("  NATIJA: 20/20 PASS (100% SUCCESS)       ")
         print("==========================================\n")
     finally:
         proc.terminate()

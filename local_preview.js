@@ -326,19 +326,45 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       return;
     }
     const isDownload = parsedReqUrl.query && parsedReqUrl.query.download === '1';
-    let dbPath = path.join(__dirname, 'telegram_bot', 'cafe_bot.db');
+    let dbPath = path.join(__dirname, 'telegram_bot', 'data', 'cafe_bot.db');
+    if (!fs.existsSync(dbPath)) {
+      dbPath = path.join(__dirname, 'telegram_bot', 'cafe_bot.db');
+    }
     if (!fs.existsSync(dbPath)) {
       dbPath = path.join(__dirname, 'cafe_bot.db');
     }
-    if (isDownload && fs.existsSync(dbPath)) {
-      const stats = fs.statSync(dbPath);
-      res.writeHead(200, {
-        'Content-Type': 'application/x-sqlite3',
-        'Content-Length': stats.size,
-        'Content-Disposition': `attachment; filename="cafe_bot_${Date.now()}.db"`,
-      });
-      fs.createReadStream(dbPath).pipe(res);
-      return;
+
+    if (isDownload) {
+      if (!fs.existsSync(dbPath)) {
+        try {
+          const child_process = require('child_process');
+          fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+          child_process.execFileSync('python', ['-c', `import sqlite3; conn=sqlite3.connect(r'${dbPath}'); conn.execute('CREATE TABLE IF NOT EXISTS _init(id INT);'); conn.close();`]);
+        } catch (_) {}
+      }
+      if (fs.existsSync(dbPath)) {
+        const stats = fs.statSync(dbPath);
+        res.writeHead(200, {
+          'Content-Type': 'application/x-sqlite3',
+          'Content-Length': stats.size,
+          'Content-Disposition': `attachment; filename="cafe_bot_${Date.now()}.db"`,
+        });
+        fs.createReadStream(dbPath).pipe(res);
+        return;
+      } else {
+        const header = Buffer.alloc(100);
+        header.write("SQLite format 3\0", 0, 16, "utf8");
+        header.writeUInt16BE(4096, 16);
+        header.writeUInt8(1, 18);
+        header.writeUInt8(1, 19);
+        res.writeHead(200, {
+          'Content-Type': 'application/x-sqlite3',
+          'Content-Length': header.length,
+          'Content-Disposition': `attachment; filename="cafe_bot_${Date.now()}.db"`,
+        });
+        res.end(header);
+        return;
+      }
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, message: 'Baza zaxira nusxasi yaratildi (Preview)' }));
@@ -627,6 +653,64 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       };
       mockOrders.unshift(target);
     }
+
+    const orderDeliveryType = String(target.delivery_type || 'delivery').toLowerCase();
+    const newStatus = body.status ? String(body.status).toLowerCase() : null;
+    const newPaySt = body.payment_status ? String(body.payment_status).toLowerCase() : null;
+    const newPayM = body.payment_method ? String(body.payment_method).toLowerCase() : null;
+
+    // RBAC Ruxsatlar tekshiruvi
+    if (authRole === 'kitchen') {
+      if (newPaySt || newPayM || body.courier_paid_upfront !== undefined || (newStatus && ['completed', 'cancelled'].includes(newStatus)) || body.cancel_reason || body.delivery_mode || body.courier_name || body.courier_phone) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: "Oshxona (KDS) faqat taom tayyorlash holatini o'zgartira oladi." }));
+        return;
+      }
+      if (newStatus && !['cooking', 'ready'].includes(newStatus)) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: "Oshxona faqat cooking/ready holatini belgilashi mumkin." }));
+        return;
+      }
+    } else if (authRole === 'courier') {
+      if (orderDeliveryType !== 'delivery') {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: "Kuryer faqat yetkazib berish (delivery) buyurtmalarini boshqara oladi." }));
+        return;
+      }
+      if (newStatus && ['cancelled', 'new', 'cooking'].includes(newStatus)) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: "Kuryer buyurtmani bekor qila olmaydi yoki oshxonaga qaytara olmaydi." }));
+        return;
+      }
+      if (body.cancel_reason) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: "Kuryer buyurtmani bekor qila olmaydi." }));
+        return;
+      }
+    } else if (authRole === 'waiter') {
+      if (newPaySt === 'paid' || newPayM) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: "Ofitsiant to'lovni tasdiqlay olmaydi. To'lov faqat kassir tomonidan qabul qilinadi." }));
+        return;
+      }
+      if ((newStatus && ['completed', 'cancelled'].includes(newStatus)) || body.cancel_reason) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: "Ofitsiant buyurtmani yopa olmaydi yoki bekor qila olmaydi." }));
+        return;
+      }
+    }
+
+    if ((newStatus === 'cancelled' || body.cancel_reason) && !['admin', 'owner', 'cashier'].includes(authRole)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: "Faqat boshqaruvchi (admin) va kassir buyurtmani bekor qila oladi." }));
+      return;
+    }
+    if (newPaySt === 'paid' && !['admin', 'owner', 'cashier'].includes(authRole)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: "Faqat boshqaruvchi va kassir to'lovni tasdiqlashi mumkin." }));
+      return;
+    }
+
     if (body.payment_status) target.payment_status = String(body.payment_status).toLowerCase();
     if (body.payment_method) {
       const pm = String(body.payment_method).toLowerCase();
@@ -694,6 +778,11 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       res.end(JSON.stringify({ ok: false, error: 'Avtorizatsiya talab qilinadi' }));
       return;
     }
+    if (!['admin', 'owner', 'cashier', 'waiter'].includes(authRole)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Ruxsat berilmagan' }));
+      return;
+    }
     const rId = parseInt(resStatusMatch[1], 10);
     const st = String(body.status || 'confirmed').toLowerCase();
     let rObj = mockReservations.find((r) => r.id === rId);
@@ -719,6 +808,11 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
     if (!isAdminAuthed) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ ok: false, error: 'Avtorizatsiya talab qilinadi' }));
+      return;
+    }
+    if (!['admin', 'owner', 'cashier', 'kitchen'].includes(authRole)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: "Faqat oshxona, kassir va boshqaruvchi stop-listni o'zgartira oladi" }));
       return;
     }
     const itemId = String(body.item_id || '').trim();

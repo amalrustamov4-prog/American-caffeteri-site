@@ -7,11 +7,12 @@ import logging
 import os
 import re
 import secrets
+import shutil
 import sqlite3
 import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 try:
     import aiohttp
     from aiohttp import web
@@ -69,11 +70,27 @@ BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent
 WWW_DIR = PROJECT_ROOT / "www"
 STATIC_ROOT = PROJECT_ROOT
-DB_PATH = BASE_DIR / "cafe_bot.db"
-# Izoh
+
+# Muhit o'zgaruvchilarini yuklash (.env)
 for _p in (BASE_DIR / ".env", PROJECT_ROOT / ".env", Path.cwd() / ".env"):
     if _p.exists():
         load_dotenv(_p, override=False)
+
+_custom_db = os.getenv("DB_PATH")
+if _custom_db:
+    DB_PATH = Path(_custom_db)
+elif (BASE_DIR / "data").exists():
+    DB_PATH = BASE_DIR / "data" / "cafe_bot.db"
+elif (BASE_DIR / "cafe_bot.db").exists():
+    DB_PATH = BASE_DIR / "cafe_bot.db"
+else:
+    DB_PATH = BASE_DIR / "data" / "cafe_bot.db"
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+if not DB_PATH.exists() and (BASE_DIR / "cafe_bot.db").exists() and DB_PATH != (BASE_DIR / "cafe_bot.db"):
+    try:
+        shutil.copy2(BASE_DIR / "cafe_bot.db", DB_PATH)
+    except Exception:
+        pass
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("american_caffetteria")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
@@ -219,6 +236,24 @@ def get_db_connection() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
+
+def create_sqlite_backup_file(dest_path: Path) -> bool:
+    """Safely dumps SQLite database (including WAL journals) using sqlite3.Connection.backup."""
+    if not DB_PATH.exists():
+        return False
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with sqlite3.connect(DB_PATH) as src_conn:
+            try:
+                src_conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
+            except Exception:
+                pass
+            with sqlite3.connect(dest_path) as dst_conn:
+                src_conn.backup(dst_conn)
+        return True
+    except Exception as exc:
+        logger.warning("Baza zaxira nusxasini olishda xatolik: %s", exc)
+        return False
 def init_and_migrate_db() -> None:
     with get_db_connection() as conn:
         conn.execute(
@@ -1339,7 +1374,7 @@ async def api_order_pay(request: web.Request) -> web.Response:
     else:
         pay_m = "cash"
 
-    operator = str(body.get("operator") or "admin").strip()
+    operator = username or str(body.get("operator") or "admin").strip()
     try:
         updated_order = pay_and_complete_order_transactional(int(order_id), payment_method=pay_m, operator=operator)
     except ValueError as ve:
@@ -1592,10 +1627,11 @@ async def api_admin_get_order(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "error": "Заказ не найден."}, status=404)
     return web.json_response({"ok": True, "order": serialize_order_row(row)})
 async def api_admin_update_status(request: web.Request) -> web.Response:
-    if not is_admin_authenticated(request):
-        return web.json_response({"ok": False, "error": "Требуется авторизация."}, status=401)
     if not check_csrf_protection(request):
         return web.json_response({"ok": False, "error": "Sessiya xavfsizlik tekshiruvi / CSRF check failed."}, status=403)
+    role, username = get_authenticated_user_info(request)
+    if not role:
+        return web.json_response({"ok": False, "error": "Требуется авторизация."}, status=401)
     order_id = request.match_info.get("id", "")
     if not order_id.isdigit():
         return web.json_response({"ok": False, "error": "Noto'g'ri buyurtma ID / Некорректный ID заказа."}, status=400)
@@ -1624,6 +1660,41 @@ async def api_admin_update_status(request: web.Request) -> web.Response:
             return web.json_response({"ok": False, "error": "Заказ не найден."}, status=404)
 
         current_status = str(row["status"] or "new").lower()
+        order_delivery_type = str(row["delivery_type"] or "delivery").lower()
+
+        # RBAC Ruxsatlar tekshiruvi
+        if role == "kitchen":
+            if new_pay_st or new_pay_m or courier_paid_upfront is not None or new_status in ("completed", "cancelled") or cancel_reason or new_deliv_mode or new_courier_name or new_courier_phone:
+                conn.rollback()
+                return web.json_response({"ok": False, "error": "Oshpaz faqat oshxona holatini (cooking/ready) o'zgartira oladi."}, status=403)
+            if new_status and new_status not in ("cooking", "ready"):
+                conn.rollback()
+                return web.json_response({"ok": False, "error": "Oshpaz uchun ruxsat etilmagan holat."}, status=403)
+
+        elif role == "courier":
+            if order_delivery_type != "delivery":
+                conn.rollback()
+                return web.json_response({"ok": False, "error": "Kuryer faqat yetkazib berish buyurtmalarini boshqara oladi."}, status=403)
+            if new_status == "cancelled" or cancel_reason or new_kitchen_st:
+                conn.rollback()
+                return web.json_response({"ok": False, "error": "Kuryer buyurtmani bekor qila olmaydi yoki oshxona holatini o'zgartira olmaydi."}, status=403)
+            if new_status and new_status not in ("delivering", "completed"):
+                conn.rollback()
+                return web.json_response({"ok": False, "error": "Kuryer faqat 'delivering' yoki 'completed' holatini o'rnata oladi."}, status=403)
+
+        elif role == "waiter":
+            if new_status in ("completed", "cancelled") or cancel_reason or new_pay_st == "paid" or courier_paid_upfront in (1, True, "1", "true"):
+                conn.rollback()
+                return web.json_response({"ok": False, "error": "Ofitsiant buyurtmani bekor qila olmaydi yoki to'lov holatini o'zgartira olmaydi."}, status=403)
+
+        if (new_status == "cancelled" or cancel_reason) and role not in ("admin", "owner", "cashier"):
+            conn.rollback()
+            return web.json_response({"ok": False, "error": "Faqat kassir va boshqaruvchi buyurtmani bekor qila oladi."}, status=403)
+
+        if (new_pay_st == "paid" or courier_paid_upfront in (1, True, "1", "true")) and role not in ("admin", "owner", "cashier", "courier"):
+            conn.rollback()
+            return web.json_response({"ok": False, "error": "Faqat kassir yoki kuryer to'lov holatini o'zgartira oladi."}, status=403)
+
         if not new_status and not new_pay_st and not new_pay_m and not new_kitchen_st and not new_deliv_mode and not new_courier_name and not new_courier_phone and courier_paid_upfront is None and not cancel_reason:
             conn.rollback()
             return web.json_response({"ok": True, "order": serialize_order_row(row)})
@@ -1710,12 +1781,13 @@ async def api_admin_update_status(request: web.Request) -> web.Response:
     bot_instance: Optional[Bot] = request.app.get("bot")
     row_keys = set(row.keys())
     group_mid = row["group_message_id"] if "group_message_id" in row_keys else None
+    final_status = target_status or current_status
+    status_label = VALID_STATUSES.get(final_status, final_status)
     if bot_instance and GROUP_CHAT_ID and group_mid:
         try:
-            status_label = VALID_STATUSES.get(new_status, new_status)
             new_text = format_order_telegram_html(serialized) + f"\n\n🏷️ <b>Holati:</b> <b>{html.escape(status_label)}</b>"
             kb = None
-            if new_status not in ("completed", "cancelled"):
+            if final_status not in ("completed", "cancelled"):
                 kb = InlineKeyboardMarkup(
                     inline_keyboard=[
                         [
@@ -1744,7 +1816,6 @@ async def api_admin_update_status(request: web.Request) -> web.Response:
     user_id = row["user_id"] if "user_id" in row_keys else None
     if bot_instance and user_id:
         try:
-            status_label = VALID_STATUSES.get(new_status, new_status)
             await bot_instance.send_message(
                 chat_id=int(user_id),
                 text=f"📦 <b>Buyurtmangiz #{order_id} holati o'zgardi:</b>\n\n👉 <b>{html.escape(status_label)}</b>\n\nAmerican Caffetteria ☕",
@@ -1754,7 +1825,7 @@ async def api_admin_update_status(request: web.Request) -> web.Response:
             logger.warning("Mijozga status bildirishnomasini yuborishda xatolik #%s: %s", order_id, e)
 
     # Anti-frod: Buyurtma bekor qilinganda egasiga/guruhga tezkor ogohlantirish
-    if new_status == "cancelled" and bot_instance:
+    if (final_status == "cancelled" or cancel_reason) and bot_instance:
         alert_target = ADMIN_USER_ID or GROUP_CHAT_ID
         if alert_target:
             try:
@@ -1948,8 +2019,13 @@ async def api_list_reservations(request: web.Request) -> web.Response:
     items = [dict(r) for r in rows]
     return web.json_response({"ok": True, "reservations": items})
 async def api_update_reservation_status(request: web.Request) -> web.Response:
-    if not is_admin_authenticated(request):
+    if not check_csrf_protection(request):
+        return web.json_response({"ok": False, "error": "Sessiya xavfsizlik tekshiruvi / CSRF check failed."}, status=403)
+    role, username = get_authenticated_user_info(request)
+    if not role:
         return web.json_response({"ok": False, "error": "Avtorizatsiya talab qilinadi / Требуется авторизация."}, status=401)
+    if role not in ("admin", "owner", "cashier", "waiter"):
+        return web.json_response({"ok": False, "error": "Ruxsat berilmagan / Forbidden."}, status=403)
     res_id = request.match_info.get("id", "")
     if not res_id.isdigit():
         return web.json_response({"ok": False, "error": "Invalid ID"}, status=400)
@@ -1973,8 +2049,13 @@ async def api_get_stoplist(request: web.Request) -> web.Response:
     stopped = [r["item_id"] for r in rows]
     return web.json_response({"ok": True, "stoplist": stopped})
 async def api_toggle_stoplist(request: web.Request) -> web.Response:
-    if not is_admin_authenticated(request):
+    if not check_csrf_protection(request):
+        return web.json_response({"ok": False, "error": "Sessiya xavfsizlik tekshiruvi / CSRF check failed."}, status=403)
+    role, username = get_authenticated_user_info(request)
+    if not role:
         return web.json_response({"ok": False, "error": "Avtorizatsiya talab qilinadi / Требуется авторизация."}, status=401)
+    if role not in ("admin", "owner", "cashier", "kitchen"):
+        return web.json_response({"ok": False, "error": "Faqat oshxona, kassir va boshqaruvchi stop-listni o'zgartira oladi."}, status=403)
     try:
         body = await request.json()
     except Exception:
@@ -2012,6 +2093,8 @@ async def api_admin_get_cash_operations(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "operations": ops, "shift_date": shift_date})
 
 async def api_admin_add_cash_operation(request: web.Request) -> web.Response:
+    if not check_csrf_protection(request):
+        return web.json_response({"ok": False, "error": "Sessiya xavfsizlik tekshiruvi / CSRF check failed."}, status=403)
     role, username = get_authenticated_user_info(request)
     if not role:
         return web.json_response({"ok": False, "error": "Avtorizatsiya talab qilinadi"}, status=401)
@@ -2031,7 +2114,7 @@ async def api_admin_add_cash_operation(request: web.Request) -> web.Response:
     if amount <= 0 or amount > 500_000_000:
         return web.json_response({"ok": False, "error": "Summa noto'g'ri (1 dan 500 000 000 gacha)"}, status=400)
     reason = str(body.get("reason") or "").strip()[:200]
-    operator = str(body.get("operator") or "admin").strip()[:50]
+    operator = username or str(body.get("operator") or "admin").strip()[:50]
     shift_date = get_tashkent_shift_date()
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     with get_db_connection() as conn:
@@ -2444,6 +2527,8 @@ async def handle_webapp_data(message: types.Message, bot: Bot):
 
 
 async def api_admin_trigger_backup(request: web.Request) -> web.Response:
+    if request.method == "POST" and not check_csrf_protection(request):
+        return web.json_response({"ok": False, "error": "Sessiya xavfsizlik tekshiruvi / CSRF check failed."}, status=403)
     role, username = get_authenticated_user_info(request)
     if not role:
         return web.json_response({"ok": False, "error": "Avtorizatsiya talab qilinadi."}, status=401)
@@ -2455,15 +2540,22 @@ async def api_admin_trigger_backup(request: web.Request) -> web.Response:
     bot_instance = request.app.get("bot")
     tashkent_now = datetime.now(timezone(timedelta(hours=5)))
     backup_filename = f"cafe_bot_{tashkent_now.strftime('%Y%m%d_%H%M%S')}.db"
+    backup_dir = BASE_DIR / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_file = backup_dir / backup_filename
+
+    success = create_sqlite_backup_file(backup_file)
+    use_file = backup_file if (success and backup_file.exists()) else DB_PATH
+
     if download:
         return web.FileResponse(
-            path=str(DB_PATH),
+            path=str(use_file),
             headers={"Content-Disposition": f'attachment; filename="{backup_filename}"'}
         )
     target_chat = ADMIN_USER_ID or GROUP_CHAT_ID
     if bot_instance and target_chat:
         try:
-            doc = FSInputFile(str(DB_PATH), filename=backup_filename)
+            doc = FSInputFile(str(use_file), filename=backup_filename)
             await bot_instance.send_document(
                 chat_id=int(target_chat),
                 document=doc,
@@ -2473,7 +2565,7 @@ async def api_admin_trigger_backup(request: web.Request) -> web.Response:
         except Exception as e:
             logger.warning("Backup yuborishda xatolik: %s", e)
     return web.FileResponse(
-        path=str(DB_PATH),
+        path=str(use_file),
         headers={"Content-Disposition": f'attachment; filename="{backup_filename}"'}
     )
 
@@ -2566,7 +2658,13 @@ async def main():
                     if now.hour == 5 and last_date != today:
                         target_chat = ADMIN_USER_ID or GROUP_CHAT_ID
                         if target_chat and DB_PATH.exists():
-                            doc = FSInputFile(str(DB_PATH), filename=f"cafe_bot_night_{today}.db")
+                            backup_dir = BASE_DIR / "backups"
+                            backup_dir.mkdir(parents=True, exist_ok=True)
+                            nightly_filename = f"cafe_bot_night_{today}.db"
+                            nightly_file = backup_dir / nightly_filename
+                            success = create_sqlite_backup_file(nightly_file)
+                            use_file = nightly_file if (success and nightly_file.exists()) else DB_PATH
+                            doc = FSInputFile(str(use_file), filename=nightly_filename)
                             await bot_instance.send_document(
                                 chat_id=int(target_chat),
                                 document=doc,

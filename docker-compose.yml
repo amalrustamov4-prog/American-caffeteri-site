@@ -9,6 +9,9 @@ services:
       - "8080:8080"
     env_file:
       - telegram_bot/.env
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8080
+      - DB_PATH=/app/telegram_bot/data/cafe_bot.db
     volumes:
-      - ./telegram_bot/cafe_bot.db:/app/telegram_bot/cafe_bot.db
-
+      - ./telegram_bot/data:/app/telegram_bot/data
