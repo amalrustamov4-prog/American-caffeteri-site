@@ -38,8 +38,8 @@ jobs:
           node --check menu_data.js
           node --check local_preview.js
           node --check sw.js
-          node --check api/orders.mjs
-          node --check api/register.mjs
+          node --check api/orders.js
+          node --check api/register.js
           python -m py_compile telegram_bot/bot.py sync_web.py make_export_zips.py tests/test_suite.py tests/test_realtime_endpoints.py tests/test_bot_http.py
 
       - name: Sync web assets to www/, Android and iOS
