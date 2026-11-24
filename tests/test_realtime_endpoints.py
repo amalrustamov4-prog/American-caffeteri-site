@@ -4,6 +4,8 @@ import time
 import urllib.request
 import urllib.error
 import sys
+import io
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -304,8 +306,51 @@ def main():
         assert st_k_pay == 403, f"Expected 403 for kitchen marking paid, got {st_k_pay}"
         print("20. RBAC PATCH /status bypass prevention (kitchen/courier/waiter restricted) -> SUCCESS")
 
+        # 21. RBAC on Order Append (/api/orders/:id/append)
+        st_app_ord, d_app_ord = req_json(
+            f"{base}/api/orders",
+            "POST",
+            {
+                "customer_name": "Append Test",
+                "phone": "+998901112233",
+                "delivery_type": "dine_in",
+                "address": "2-Stol",
+                "payment_method": "unpaid",
+                "items": [{"id": "burger_gamburger", "name": "Gamburger", "price": 35000, "qty": 1}],
+            },
+        )
+        assert st_app_ord in (200, 201) and d_app_ord.get("ok"), f"Create order for append failed: {d_app_ord}"
+        app_ord_id = d_app_ord["order"]["id"]
+
+        st_c_app, _ = req_json(f"{base}/api/orders/{app_ord_id}/append", "POST", {"items": [{"name": "Cola", "price": 10000, "quantity": 1}]}, courier_hdr)
+        assert st_c_app == 403, f"Expected 403 for courier appending, got {st_c_app}"
+        st_k_app, _ = req_json(f"{base}/api/orders/{app_ord_id}/append", "POST", {"items": [{"name": "Cola", "price": 10000, "quantity": 1}]}, kitchen_hdr)
+        assert st_k_app == 403, f"Expected 403 for kitchen appending, got {st_k_app}"
+        st_w_app, d_w_app = req_json(f"{base}/api/orders/{app_ord_id}/append", "POST", {"items": [{"id": "coca_cola_05", "name": "Coca-Cola 0.5L", "price": 1, "qty": 1}]}, waiter_hdr)
+        assert st_w_app == 200 and d_w_app.get("ok"), f"Expected 200 for waiter appending, got {st_w_app}: {d_w_app}"
+        print("21. RBAC Order Append (courier/kitchen 403, waiter 200) -> SUCCESS")
+
+        # 22. Excel (.xlsx) Report Export RBAC & OOXML Structure
+        st_c_xl, _ = req_json(f"{base}/api/admin/export-excel", "GET", None, courier_hdr)
+        assert st_c_xl == 403, f"Expected 403 for courier exporting excel, got {st_c_xl}"
+
+        req_xl = urllib.request.Request(f"{base}/api/admin/export-excel", headers=auth_hdr)
+        with opener.open(req_xl, timeout=5) as xl_resp:
+            assert xl_resp.status == 200, f"Expected 200 for admin exporting excel, got {xl_resp.status}"
+            ct = xl_resp.headers.get("Content-Type", "")
+            assert "openxmlformats" in ct, f"Expected openxmlformats Content-Type, got {ct}"
+            xl_bytes = xl_resp.read()
+            assert xl_bytes.startswith(b"PK\x03\x04"), f"Excel file does not have zip magic bytes: {xl_bytes[:10]}"
+            with zipfile.ZipFile(io.BytesIO(xl_bytes)) as zf:
+                names = zf.namelist()
+                assert "[Content_Types].xml" in names, "Missing [Content_Types].xml"
+                assert "xl/workbook.xml" in names, "Missing xl/workbook.xml"
+                for i in range(1, 7):
+                    assert f"xl/worksheets/sheet{i}.xml" in names, f"Missing xl/worksheets/sheet{i}.xml"
+        print("22. GET /api/admin/export-excel (RBAC 403 for courier, 200 & valid 6-sheet .xlsx for admin) -> SUCCESS")
+
         print("\n==========================================")
-        print("  NATIJA: 20/20 PASS (100% SUCCESS)       ")
+        print("  NATIJA: 22/22 PASS (100% SUCCESS)       ")
         print("==========================================\n")
     finally:
         proc.terminate()

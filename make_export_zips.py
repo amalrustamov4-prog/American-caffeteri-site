@@ -15,6 +15,7 @@ EXCLUDE_DIRS = {
     ".gradle",
     "build",
     ".vercel",
+    "backups",
 }
 
 EXCLUDE_EXTS = {

@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import hmac
 import html
+import io
 import json
 import logging
 import os
@@ -10,6 +11,7 @@ import secrets
 import shutil
 import sqlite3
 import time
+import zipfile
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
@@ -254,6 +256,25 @@ def create_sqlite_backup_file(dest_path: Path) -> bool:
     except Exception as exc:
         logger.warning("Baza zaxira nusxasini olishda xatolik: %s", exc)
         return False
+
+def cleanup_old_backups(backup_dir: Path, max_files: int = 14) -> None:
+    """Retains the most recent max_files backup files in backup_dir, removing older ones."""
+    try:
+        if not backup_dir.exists():
+            return
+        files = sorted(
+            [f for f in backup_dir.glob("cafe_bot_*.db") if f.is_file()],
+            key=lambda x: x.stat().st_mtime,
+            reverse=True
+        )
+        for old_f in files[max_files:]:
+            try:
+                old_f.unlink()
+                logger.info("Eski backup o'chirildi: %s", old_f.name)
+            except Exception:
+                pass
+    except Exception as e:
+        logger.warning("Backup tozalash xatosi: %s", e)
 def init_and_migrate_db() -> None:
     with get_db_connection() as conn:
         conn.execute(
@@ -862,6 +883,7 @@ async def send_telegram_group_notification(bot_instance: Optional[Bot], order: D
             [
                 {"text": "✅ Qabul qilish", "callback_data": f"ordst:{oid}:accepted"},
                 {"text": "👨‍🍳 Oshxonada", "callback_data": f"ordst:{oid}:cooking"},
+                {"text": "🔔 Tayyor", "callback_data": f"ordst:{oid}:ready"},
             ],
             [
                 {"text": "🛵 Kuryerda", "callback_data": f"ordst:{oid}:delivering"},
@@ -879,6 +901,7 @@ async def send_telegram_group_notification(bot_instance: Optional[Bot], order: D
                     [
                         InlineKeyboardButton(text="✅ Qabul qilish", callback_data=f"ordst:{oid}:accepted"),
                         InlineKeyboardButton(text="👨‍🍳 Oshxonada", callback_data=f"ordst:{oid}:cooking"),
+                        InlineKeyboardButton(text="🔔 Tayyor", callback_data=f"ordst:{oid}:ready"),
                     ],
                     [
                         InlineKeyboardButton(text="🛵 Kuryerda", callback_data=f"ordst:{oid}:delivering"),
@@ -1117,7 +1140,22 @@ def check_csrf_protection(request: web.Request) -> bool:
     return False
 
 BLOCKED_PATH_PREFIXES = ("/.", "/telegram_bot", "/android", "/tests", "/node_modules")
-BLOCKED_EXTENSIONS = (".env", ".py", ".pyc", ".db", ".db-wal", ".db-shm", ".bat", ".sh", ".md", ".apk", ".log")
+BLOCKED_EXTENSIONS = (
+    ".env", ".py", ".pyc", ".db", ".db-wal", ".db-shm", ".bat", ".sh", ".md", ".apk", ".log", ".yml", ".yaml"
+)
+BLOCKED_EXACT_PATHS = {
+    "/local_preview.js",
+    "/dockerfile",
+    "/docker-compose.yml",
+    "/package.json",
+    "/package-lock.json",
+    "/vercel.json",
+    "/capacitor.config.json",
+    "/api/orders.js",
+    "/api/register.js",
+    "/api/package.json",
+    "/api/package-lock.json",
+}
 
 @web.middleware
 async def cors_and_security_middleware(request: web.Request, handler):
@@ -1125,7 +1163,8 @@ async def cors_and_security_middleware(request: web.Request, handler):
         raise web.HTTPFound("/")
     req_path_lower = request.path.lower()
     if (
-        any(req_path_lower.startswith(p) for p in BLOCKED_PATH_PREFIXES)
+        req_path_lower in BLOCKED_EXACT_PATHS
+        or any(req_path_lower.startswith(p) for p in BLOCKED_PATH_PREFIXES)
         or any(req_path_lower.endswith(ext) for ext in BLOCKED_EXTENSIONS)
         or "/." in req_path_lower
     ):
@@ -1216,7 +1255,7 @@ async def api_register_client(request: web.Request) -> web.Response:
         "bot": "💬 Telegram Bot",
     }
     source_title = source_map.get(source, f"📱 {source}")
-    now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
+    now_str = datetime.now(timezone(timedelta(hours=5))).strftime("%d.%m.%Y %H:%M")
     card_lines = [
         "🆕 <b>YANGI MIJOZ RO'YXATDAN O'TDI</b>",
         "──────────────────────────────",
@@ -1228,7 +1267,7 @@ async def api_register_client(request: web.Request) -> web.Response:
     if lat and lng and lat != "0" and lng != "0":
         card_lines.append(f'🗺️ <b>GPS:</b> <a href="https://maps.google.com/?q={lat},{lng}">{lat}, {lng}</a>')
     card_lines.append(f"📱 <b>Manba:</b> {source_title}")
-    card_lines.append(f"🕒 <b>Vaqt:</b> {now_str}")
+    card_lines.append(f"🕒 <b>Vaqt:</b> {now_str} (Toshkent UTC+5)")
     card_lines.append("──────────────────────────────")
     card_lines.append("✅ Mijoz American Caffetteria bazasiga muvaffaqiyatli saqlandi!")
     card_text = chr(10).join(card_lines)
@@ -1286,8 +1325,7 @@ async def handle_order_append_logic(request: web.Request, order_id: int, payload
                 name = cd_name.get("uz") or cd_name.get("ru") or iid
             else:
                 name = str(cd_name or it.get("name") or iid)
-            if price <= 0:
-                price = int(cat_dish["price"])
+            price = int(cat_dish["price"])
         else:
             name = str(it.get("name") or iid)
         validated_new_items.append({
@@ -1296,7 +1334,7 @@ async def handle_order_append_logic(request: web.Request, order_id: int, payload
             "price": price,
             "qty": qty,
             "line_total": price * qty,
-            "added_at": datetime.now(timezone.utc).strftime("%H:%M"),
+            "added_at": datetime.now(timezone(timedelta(hours=5))).strftime("%H:%M"),
         })
 
     try:
@@ -1306,7 +1344,9 @@ async def handle_order_append_logic(request: web.Request, order_id: int, payload
             additional_comment=str(payload.get("comment") or "").strip(),
         )
     except ValueError as ve:
-        return web.json_response({"ok": False, "error": str(ve)}, status=404)
+        err_msg = str(ve)
+        status_code = 404 if ("topilmadi" in err_msg.lower() or "не найден" in err_msg.lower()) else 400
+        return web.json_response({"ok": False, "error": err_msg}, status=status_code)
     except Exception as exc:
         logger.exception("Append items error: %s", exc)
         return web.json_response({"ok": False, "error": "Taomlarni qo'shishda xatolik."}, status=500)
@@ -1316,6 +1356,7 @@ async def handle_order_append_logic(request: web.Request, order_id: int, payload
     bot_instance = request.app.get("bot")
     if bot_instance and GROUP_CHAT_ID:
         tbl_label = updated_order.get("address") or updated_order.get("customer_name") or "Zalda"
+        tashkent_now_str = datetime.now(timezone(timedelta(hours=5))).strftime('%H:%M:%S (Toshkent UTC+5)')
         lines = [
             f"➕ <b>QO'SHIMCHA BUYURTMA (DO-ZAKAZ)!</b>",
             f"━━━━━━━━━━━━━━━━━━━━━",
@@ -1326,7 +1367,7 @@ async def handle_order_append_logic(request: web.Request, order_id: int, payload
             lines.append(f"{idx}. {html.escape(it['name'])} × {it['qty']} = <b>{it['line_total']:,} so'm</b>".replace(",", " "))
         lines.append(f"━━━━━━━━━━━━━━━━━━━━━")
         lines.append(f"💰 <b>Yangilangan jami hisob: {updated_order['total']:,} so'm</b>".replace(",", " "))
-        lines.append(f"🕒 <b>Vaqt:</b> {datetime.now(timezone.utc).strftime('%H:%M:%S')} UTC")
+        lines.append(f"🕒 <b>Vaqt:</b> {tashkent_now_str}")
         asyncio.create_task(bot_instance.send_message(
             chat_id=GROUP_CHAT_ID,
             text=chr(10).join(lines),
@@ -1336,10 +1377,13 @@ async def handle_order_append_logic(request: web.Request, order_id: int, payload
     return web.json_response({"ok": True, "order": updated_order, "added_items": validated_new_items})
 
 async def api_order_append(request: web.Request) -> web.Response:
-    if not is_admin_authenticated(request):
-        return web.json_response({"ok": False, "error": "Ruxsat berilmagan / Unauthorized."}, status=401)
     if not check_csrf_protection(request):
         return web.json_response({"ok": False, "error": "Sessiya xavfsizlik tekshiruvi / CSRF check failed."}, status=403)
+    role, username = get_authenticated_user_info(request)
+    if not role:
+        return web.json_response({"ok": False, "error": "Ruxsat berilmagan / Unauthorized."}, status=401)
+    if role not in ("admin", "owner", "cashier", "waiter"):
+        return web.json_response({"ok": False, "error": "Faqat ofitsiant, kassir va boshqaruvchi do-zakaz qila oladi."}, status=403)
     order_id = request.match_info.get("id", "")
     if not order_id.isdigit():
         return web.json_response({"ok": False, "error": "Noto'g'ri buyurtma ID."}, status=400)
@@ -1596,8 +1640,8 @@ async def api_admin_list_orders(request: web.Request) -> web.Response:
             (limit,),
         ).fetchall()
     all_orders = [serialize_order_row(r) for r in rows]
-    today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    stats = compute_stats(all_orders, date_filter or today_utc)
+    today_shift = get_tashkent_shift_date()
+    stats = compute_stats(all_orders, date_filter or today_shift)
     filtered = []
     for o in all_orders:
         if status_filter and status_filter != "all":
@@ -1712,6 +1756,8 @@ async def api_admin_update_status(request: web.Request) -> web.Response:
         target_status = new_status
         if new_kitchen_st == "ready" and not target_status:
             target_status = "ready"
+        elif new_kitchen_st == "cooking" and not target_status:
+            target_status = "cooking"
         elif new_pay_st == "paid" and not target_status:
             target_status = "completed"
 
@@ -1739,6 +1785,7 @@ async def api_admin_update_status(request: web.Request) -> web.Response:
             set_clauses.append("courier_phone = ?")
             set_params.append(new_courier_phone)
 
+        cpu_val = 0
         if courier_paid_upfront is not None:
             cpu_val = 1 if courier_paid_upfront in (1, True, "1", "true") else 0
             set_clauses.append("courier_paid_upfront = ?")
@@ -1751,11 +1798,11 @@ async def api_admin_update_status(request: web.Request) -> web.Response:
             set_clauses.append("cancel_reason = ?")
             set_params.append(cancel_reason)
 
-        if new_pay_st in ("pending", "paid", "awaiting_confirmation") and courier_paid_upfront != 1:
+        if new_pay_st in ("pending", "paid", "awaiting_confirmation") and cpu_val != 1:
             set_clauses.append("payment_status = ?")
             set_params.append(new_pay_st)
 
-        if new_pay_m and courier_paid_upfront != 1:
+        if new_pay_m and cpu_val != 1:
             if new_pay_m in ("card_terminal", "courier_terminal"):
                 new_pay_m = "card_terminal"
             elif new_pay_m in ("terminal", "humo", "uzcard"):
@@ -1783,6 +1830,8 @@ async def api_admin_update_status(request: web.Request) -> web.Response:
     group_mid = row["group_message_id"] if "group_message_id" in row_keys else None
     final_status = target_status or current_status
     status_label = VALID_STATUSES.get(final_status, final_status)
+    status_actually_changed = bool(final_status and final_status != current_status)
+
     if bot_instance and GROUP_CHAT_ID and group_mid:
         try:
             new_text = format_order_telegram_html(serialized) + f"\n\n🏷️ <b>Holati:</b> <b>{html.escape(status_label)}</b>"
@@ -1793,6 +1842,7 @@ async def api_admin_update_status(request: web.Request) -> web.Response:
                         [
                             InlineKeyboardButton(text="✅ Qabul qilish", callback_data=f"ordst:{order_id}:accepted"),
                             InlineKeyboardButton(text="👨‍🍳 Oshxonada", callback_data=f"ordst:{order_id}:cooking"),
+                            InlineKeyboardButton(text="🔔 Tayyor", callback_data=f"ordst:{order_id}:ready"),
                         ],
                         [
                             InlineKeyboardButton(text="🛵 Kuryerda", callback_data=f"ordst:{order_id}:delivering"),
@@ -1813,8 +1863,31 @@ async def api_admin_update_status(request: web.Request) -> web.Response:
         except Exception as e:
             logger.warning("Telegram guruhdagi xabarni tahrirlashda xatolik #%s: %s", order_id, e)
 
+    # 4. Oshxona tayyor bo'lganda guruhga alohida tovushli xabar
+    if final_status == "ready" and status_actually_changed and bot_instance and GROUP_CHAT_ID:
+        try:
+            tashkent_hm = datetime.now(timezone(timedelta(hours=5))).strftime("%H:%M")
+            loc_label = serialized.get("address") or serialized.get("customer_name") or "Zalda"
+            code_str = serialized.get("order_code") or f"#{order_id}"
+            ready_alert = (
+                f"🔔 <b>OSHXONADAN TAYYOR!</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━━\n"
+                f"🍽️ <b>Buyurtma:</b> <b>{html.escape(code_str)}</b>\n"
+                f"📍 <b>Joy / Stol:</b> {html.escape(loc_label)}\n"
+                f"⏰ <b>Vaqt:</b> {tashkent_hm} (Toshkent)\n"
+                f"━━━━━━━━━━━━━━━━━━━━━\n"
+                f"👉 Iltimos, mijozga yetkazing yoki stolga xizmat ko'rsating!"
+            )
+            asyncio.create_task(bot_instance.send_message(
+                chat_id=GROUP_CHAT_ID,
+                text=ready_alert,
+                parse_mode="HTML"
+            ))
+        except Exception as e:
+            logger.warning("Oshxona tayyor xabarini guruhga yuborishda xatolik: %s", e)
+
     user_id = row["user_id"] if "user_id" in row_keys else None
-    if bot_instance and user_id:
+    if bot_instance and user_id and status_actually_changed:
         try:
             await bot_instance.send_message(
                 chat_id=int(user_id),
@@ -1833,7 +1906,8 @@ async def api_admin_update_status(request: web.Request) -> web.Response:
                 cust_or_table = serialized.get("customer_name") or serialized.get("address") or "Zal"
                 tot = serialized.get("total") or serialized.get("total_amount") or 0
                 reason_txt = cancel_reason or "Sabab ko'rsatilmadi"
-                staff_name = serialized.get("waiter_name") or "Kassir / Operator"
+                staff_name = username or serialized.get("waiter_name") or "Kassir / Operator"
+                tashkent_now_str = datetime.now(timezone(timedelta(hours=5))).strftime('%H:%M:%S (Toshkent UTC+5)')
                 alert_msg = (
                     f"🚨 <b>DIQQAT: BUYURTMA BEKOR QILINDI (Anti-Frod)!</b>\n\n"
                     f"🔢 <b>Buyurtma:</b> <code>{html.escape(ord_code)}</code>\n"
@@ -1841,7 +1915,7 @@ async def api_admin_update_status(request: web.Request) -> web.Response:
                     f"💰 <b>Summa:</b> {tot:,.0f} so'm\n"
                     f"👤 <b>Xodim:</b> {html.escape(str(staff_name))}\n"
                     f"⚠️ <b>Sabab:</b> <b>{html.escape(reason_txt)}</b>\n"
-                    f"⏰ <b>Vaqt:</b> {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}"
+                    f"⏰ <b>Vaqt:</b> {tashkent_now_str}"
                 )
                 await bot_instance.send_message(chat_id=int(alert_target), text=alert_msg, parse_mode="HTML")
             except Exception as e:
@@ -1952,6 +2026,371 @@ async def api_admin_stats(request: web.Request) -> web.Response:
             "waiter_stats": waiter_stats,
             "cash_operations": [dict(op) for op in cash_ops],
         })
+
+def generate_excel_report_bytes(target_shift: str, operator_name: str) -> bytes:
+    """Generates a professional 6-sheet .xlsx workbook on pure Python using standard zipfile."""
+    tashkent_tz = timezone(timedelta(hours=5))
+    tashkent_now = datetime.now(tashkent_tz).strftime("%d.%m.%Y %H:%M:%S")
+
+    with get_db_connection() as conn:
+        all_orders_rows = conn.execute("SELECT * FROM orders ORDER BY id DESC").fetchall()
+        cash_ops_rows = conn.execute("SELECT * FROM cash_operations ORDER BY id DESC").fetchall()
+        reservations_rows = conn.execute("SELECT * FROM reservations ORDER BY id DESC").fetchall()
+
+    all_orders = [serialize_order_row(r) for r in all_orders_rows]
+    cash_ops = [dict(r) for r in cash_ops_rows]
+    reservations = [dict(r) for r in reservations_rows]
+
+    # Shift calculations
+    shift_orders = [o for o in all_orders if (o.get("created_at_utc") or "").startswith(target_shift)]
+    valid_orders = [o for o in shift_orders if o.get("status") != "cancelled" and str(o.get("payment_status", "")).lower() == "paid"]
+    cancelled_orders = [o for o in shift_orders if o.get("status") == "cancelled"]
+
+    total_revenue = sum(int(o.get("total") or 0) for o in valid_orders)
+    cash_revenue = 0
+    card_revenue = 0
+    online_revenue = 0
+
+    waiter_map: Dict[str, Dict[str, Any]] = {}
+    dish_map: Dict[str, Dict[str, Any]] = {}
+
+    unpaid_open_tables_count = 0
+    unpaid_open_tables_revenue = 0
+
+    for o in shift_orders:
+        st = str(o.get("status") or "new").lower()
+        tot = int(o.get("total") or 0)
+        is_paid = str(o.get("payment_status", "")).lower() == "paid"
+        if o.get("delivery_type") == "dine_in" and not is_paid and st not in ("completed", "cancelled"):
+            unpaid_open_tables_count += 1
+            unpaid_open_tables_revenue += tot
+
+        if st != "cancelled" and is_paid:
+            pm = str(o.get("payment_method") or "").lower()
+            comm = str(o.get("comment") or "").lower()
+            if pm in ("card", "card_terminal") or "card" in comm or "karta" in comm or "humo" in comm:
+                card_revenue += tot
+            elif pm in ("online", "click", "payme") or "click" in comm or "payme" in comm:
+                online_revenue += tot
+            else:
+                cash_revenue += tot
+
+            w_name = o.get("waiter_name") or "Kassa / Umumiy"
+            if w_name not in waiter_map:
+                waiter_map[w_name] = {"waiter_name": w_name, "orders_count": 0, "total_sales": 0, "service_fee": 0}
+            waiter_map[w_name]["orders_count"] += 1
+            waiter_map[w_name]["total_sales"] += tot
+            waiter_map[w_name]["service_fee"] += int(o.get("service_fee") or 0)
+
+            for it in (o.get("items") or []):
+                dish_n = it.get("name") or it.get("id") or "Taom"
+                q = int(it.get("qty") or 1)
+                p = int(it.get("price") or 0)
+                if dish_n not in dish_map:
+                    dish_map[dish_n] = {"name": dish_n, "qty": 0, "revenue": 0}
+                dish_map[dish_n]["qty"] += q
+                dish_map[dish_n]["revenue"] += q * p
+
+    shift_cash_ops = [c for c in cash_ops if c.get("shift_date") == target_shift]
+    cash_in_total = sum(int(c.get("amount") or 0) for c in shift_cash_ops if c.get("op_type") == "cash_in")
+    cash_out_total = sum(int(c.get("amount") or 0) for c in shift_cash_ops if c.get("op_type") == "cash_out")
+    cash_in_drawer = cash_revenue + cash_in_total - cash_out_total
+
+    avg_check = round(total_revenue / max(1, len(valid_orders)))
+
+    # SHEET 1: Hisobot (Smena)
+    s1_headers = ["Ko'rsatkich (Smena parametri)", "Qiymati"]
+    s1_rows = [
+        ["Smena sanasi", target_shift],
+        ["Hisobot yaratilgan vaqt", f"{tashkent_now} (Toshkent UTC+5)"],
+        ["Hisobot oluvchi xodim (Operator)", operator_name or "admin"],
+        ["Jami buyurtmalar soni (Smenada)", len(shift_orders)],
+        ["Muvaffaqiyatli / To'langan buyurtmalar", len(valid_orders)],
+        ["Bekor qilingan buyurtmalar", len(cancelled_orders)],
+        ["Jami tushum / savdo (so'm)", total_revenue],
+        ["O'rtacha chek (so'm)", avg_check],
+        ["Naqd pul tushumi (so'm)", cash_revenue],
+        ["Terminal / Karta tushumi (so'm)", card_revenue],
+        ["Click / Payme onlayn tushum (so'm)", online_revenue],
+        ["Kassa kirim (Razmen / naqd solish)", cash_in_total],
+        ["Kassa chiqim (Inkassatsiya / xarajat)", cash_out_total],
+        ["Kassadagi joriy naqd pul qoldig'i (so'm)", cash_in_drawer],
+        ["Ochiq to'lanmagan stollar soni", unpaid_open_tables_count],
+        ["Ochiq stollardagi kutilayotgan summa (so'm)", unpaid_open_tables_revenue],
+    ]
+    s1_widths = [45, 30]
+
+    # SHEET 2: Buyurtmalar
+    s2_headers = [
+        "ID", "Buyurtma kodi", "Vaqt (Toshkent)", "Buyurtma turi", "Mijoz / Stol", "Telefon",
+        "Manzil", "Tarkibi (Taomlar)", "Taomlar summasi", "Chegirma", "10% Xizmat haqi",
+        "Yetkazish narxi", "Jami summa", "To'lov usuli", "To'lov holati", "Buyurtma holati",
+        "Ofitsiant", "Kuryer", "Bekor qilish sababi"
+    ]
+    s2_rows = []
+    for o in all_orders:
+        created_utc = o.get("created_at_utc") or ""
+        t_time = ""
+        if created_utc:
+            try:
+                dt = datetime.fromisoformat(created_utc.replace("Z", "+00:00"))
+                t_time = dt.astimezone(tashkent_tz).strftime("%d.%m.%Y %H:%M")
+            except Exception:
+                t_time = created_utc
+        items_summary = ", ".join(f"{it.get('name', 'Taom')} x{it.get('qty', 1)}" for it in (o.get("items") or []))
+        s2_rows.append([
+            o.get("id"),
+            o.get("order_code") or f"#AC-{o.get('id')}",
+            t_time,
+            o.get("delivery_type") or "delivery",
+            o.get("customer_name") or "",
+            o.get("phone") or "",
+            o.get("address") or "",
+            items_summary,
+            int(o.get("subtotal") or 0),
+            int(o.get("discount") or 0),
+            int(o.get("service_fee") or 0),
+            int(o.get("delivery_fee") or 0),
+            int(o.get("total") or 0),
+            o.get("payment_method") or "cash",
+            o.get("payment_status") or "pending",
+            o.get("status") or "new",
+            o.get("waiter_name") or "",
+            o.get("courier_name") or "",
+            o.get("cancel_reason") or "",
+        ])
+    s2_widths = [8, 14, 18, 14, 20, 16, 25, 40, 15, 12, 15, 14, 15, 14, 14, 14, 16, 16, 25]
+
+    # SHEET 3: Kassa kitobi
+    s3_headers = ["ID", "Smena sanasi", "Vaqt (Toshkent)", "Operatsiya turi", "Summa (so'm)", "Sabab / Izoh", "Operator"]
+    s3_rows = []
+    for c in cash_ops:
+        created_utc = c.get("created_at_utc") or ""
+        t_time = ""
+        if created_utc:
+            try:
+                dt = datetime.fromisoformat(created_utc.replace("Z", "+00:00"))
+                t_time = dt.astimezone(tashkent_tz).strftime("%d.%m.%Y %H:%M")
+            except Exception:
+                t_time = created_utc
+        op_label = "Kirim (Kassaga naqd solish)" if c.get("op_type") == "cash_in" else "Chiqim (Inkassatsiya/Xarajat)"
+        s3_rows.append([
+            c.get("id"),
+            c.get("shift_date") or "",
+            t_time,
+            op_label,
+            int(c.get("amount") or 0),
+            c.get("reason") or "",
+            c.get("operator") or "",
+        ])
+    s3_widths = [8, 14, 18, 28, 16, 35, 18]
+
+    # SHEET 4: Ofitsiantlar
+    s4_headers = ["Ofitsiant ismi", "Buyurtmalar soni", "Jami savdo (so'm)", "10% Xizmat haqi (so'm)"]
+    s4_rows = []
+    for w in sorted(waiter_map.values(), key=lambda x: x["total_sales"], reverse=True):
+        s4_rows.append([
+            w["waiter_name"],
+            w["orders_count"],
+            w["total_sales"],
+            w["service_fee"],
+        ])
+    s4_widths = [25, 18, 20, 22]
+
+    # SHEET 5: Top taomlar
+    s5_headers = ["Taom nomi", "Sotilgan soni (dona)", "Jami tushum (so'm)"]
+    s5_rows = []
+    for d in sorted(dish_map.values(), key=lambda x: (x["qty"], x["revenue"]), reverse=True):
+        s5_rows.append([
+            d["name"],
+            d["qty"],
+            d["revenue"],
+        ])
+    s5_widths = [35, 20, 22]
+
+    # SHEET 6: Stol bronlari
+    s6_headers = ["ID", "Sana", "Vaqt", "Mijoz", "Telefon", "Stol", "Zal", "Mehmonlar", "Holati", "Izoh"]
+    s6_rows = []
+    for r in reservations:
+        s6_rows.append([
+            r.get("id"),
+            r.get("res_date") or "",
+            r.get("res_time") or "",
+            r.get("customer_name") or "",
+            r.get("phone") or "",
+            r.get("table_name") or "",
+            r.get("hall") or "",
+            int(r.get("guests") or 1),
+            r.get("status") or "new",
+            r.get("comment") or "",
+        ])
+    s6_widths = [8, 14, 10, 20, 16, 14, 16, 12, 14, 30]
+
+    def _col_name(idx: int) -> str:
+        res = ""
+        while idx > 0:
+            idx, rem = divmod(idx - 1, 26)
+            res = chr(65 + rem) + res
+        return res
+
+    def _build_sheet_xml(headers: List[str], rows: List[List[Any]], col_widths: List[int]) -> str:
+        xml = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n', '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">\n']
+        if col_widths:
+            xml.append('  <cols>\n')
+            for idx, w in enumerate(col_widths, 1):
+                xml.append(f'    <col min="{idx}" max="{idx}" width="{w}" customWidth="1"/>\n')
+            xml.append('  </cols>\n')
+        xml.append('  <sheetData>\n')
+
+        # Header row
+        xml.append('    <row r="1" ht="26" customHeight="1">\n')
+        for c_idx, h in enumerate(headers, 1):
+            cl = _col_name(c_idx)
+            xml.append(f'      <c r="{cl}1" t="inlineStr" s="1"><is><t>{html.escape(str(h))}</t></is></c>\n')
+        xml.append('    </row>\n')
+
+        # Data rows
+        for r_idx, row in enumerate(rows, 2):
+            xml.append(f'    <row r="{r_idx}">\n')
+            for c_idx, val in enumerate(row, 1):
+                cl = _col_name(c_idx)
+                if isinstance(val, (int, float)):
+                    xml.append(f'      <c r="{cl}{r_idx}" s="2"><v>{val}</v></c>\n')
+                else:
+                    str_v = str(val if val is not None else "")
+                    xml.append(f'      <c r="{cl}{r_idx}" t="inlineStr" s="0"><is><t>{html.escape(str_v)}</t></is></c>\n')
+            xml.append('    </row>\n')
+        xml.append('  </sheetData>\n</worksheet>')
+        return "".join(xml)
+
+    content_types_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\n'
+        '  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>\n'
+        '  <Default Extension="xml" ContentType="application/xml"/>\n'
+        '  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>\n'
+        '  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>\n'
+        '  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>\n'
+        '  <Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>\n'
+        '  <Override PartName="/xl/worksheets/sheet3.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>\n'
+        '  <Override PartName="/xl/worksheets/sheet4.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>\n'
+        '  <Override PartName="/xl/worksheets/sheet5.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>\n'
+        '  <Override PartName="/xl/worksheets/sheet6.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>\n'
+        '</Types>'
+    )
+
+    rels_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n'
+        '  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>\n'
+        '</Relationships>'
+    )
+
+    wb_rels_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n'
+        '  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>\n'
+        '  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>\n'
+        '  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet3.xml"/>\n'
+        '  <Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet4.xml"/>\n'
+        '  <Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet5.xml"/>\n'
+        '  <Relationship Id="rId6" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet6.xml"/>\n'
+        '  <Relationship Id="rId7" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>\n'
+        '</Relationships>'
+    )
+
+    wb_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">\n'
+        '  <sheets>\n'
+        '    <sheet name="Hisobot (Smena)" sheetId="1" r:id="rId1"/>\n'
+        '    <sheet name="Buyurtmalar" sheetId="2" r:id="rId2"/>\n'
+        '    <sheet name="Kassa kitobi" sheetId="3" r:id="rId3"/>\n'
+        '    <sheet name="Ofitsiantlar" sheetId="4" r:id="rId4"/>\n'
+        '    <sheet name="Top taomlar" sheetId="5" r:id="rId5"/>\n'
+        '    <sheet name="Stol bronlari" sheetId="6" r:id="rId6"/>\n'
+        '  </sheets>\n'
+        '</workbook>'
+    )
+
+    styles_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">\n'
+        '  <fonts count="3">\n'
+        '    <font><sz val="11"/><name val="Calibri"/></font>\n'
+        '    <font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/></font>\n'
+        '    <font><b/><sz val="11"/><name val="Calibri"/></font>\n'
+        '  </fonts>\n'
+        '  <fills count="4">\n'
+        '    <fill><patternFill patternType="none"/></fill>\n'
+        '    <fill><patternFill patternType="gray125"/></fill>\n'
+        '    <fill><patternFill patternType="solid"><fgColor rgb="FF0F766E"/></patternFill></fill>\n'
+        '    <fill><patternFill patternType="solid"><fgColor rgb="FFF1F5F9"/></patternFill></fill>\n'
+        '  </fills>\n'
+        '  <borders count="2">\n'
+        '    <border><left/><right/><top/><bottom/><diagonal/></border>\n'
+        '    <border>\n'
+        '      <left style="thin"><color rgb="FFCBD5E1"/></left>\n'
+        '      <right style="thin"><color rgb="FFCBD5E1"/></right>\n'
+        '      <top style="thin"><color rgb="FFCBD5E1"/></top>\n'
+        '      <bottom style="thin"><color rgb="FFCBD5E1"/></bottom>\n'
+        '      <diagonal/>\n'
+        '    </border>\n'
+        '  </borders>\n'
+        '  <cellStyleXfs count="1">\n'
+        '    <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>\n'
+        '  </cellStyleXfs>\n'
+        '  <cellXfs count="4">\n'
+        '    <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/>\n'
+        '    <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>\n'
+        '    <xf numFmtId="3" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>\n'
+        '    <xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>\n'
+        '  </cellXfs>\n'
+        '</styleSheet>'
+    )
+
+    sheet1_xml = _build_sheet_xml(s1_headers, s1_rows, s1_widths)
+    sheet2_xml = _build_sheet_xml(s2_headers, s2_rows, s2_widths)
+    sheet3_xml = _build_sheet_xml(s3_headers, s3_rows, s3_widths)
+    sheet4_xml = _build_sheet_xml(s4_headers, s4_rows, s4_widths)
+    sheet5_xml = _build_sheet_xml(s5_headers, s5_rows, s5_widths)
+    sheet6_xml = _build_sheet_xml(s6_headers, s6_rows, s6_widths)
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("[Content_Types].xml", content_types_xml)
+        zf.writestr("_rels/.rels", rels_xml)
+        zf.writestr("xl/_rels/workbook.xml.rels", wb_rels_xml)
+        zf.writestr("xl/workbook.xml", wb_xml)
+        zf.writestr("xl/styles.xml", styles_xml)
+        zf.writestr("xl/worksheets/sheet1.xml", sheet1_xml)
+        zf.writestr("xl/worksheets/sheet2.xml", sheet2_xml)
+        zf.writestr("xl/worksheets/sheet3.xml", sheet3_xml)
+        zf.writestr("xl/worksheets/sheet4.xml", sheet4_xml)
+        zf.writestr("xl/worksheets/sheet5.xml", sheet5_xml)
+        zf.writestr("xl/worksheets/sheet6.xml", sheet6_xml)
+
+    return buf.getvalue()
+
+async def api_admin_export_excel(request: web.Request) -> web.Response:
+    role, username = get_authenticated_user_info(request)
+    if not role:
+        return web.json_response({"ok": False, "error": "Avtorizatsiya talab qilinadi."}, status=401)
+    if role not in ("admin", "owner", "cashier"):
+        return web.json_response({"ok": False, "error": "Faqat boshqaruvchi va kassir hisobotni yuklab olishi mumkin."}, status=403)
+    target_shift = request.query.get("date") or get_tashkent_shift_date()
+    try:
+        excel_bytes = generate_excel_report_bytes(target_shift, username or "admin")
+        filename = f"American_Caffetteria_Hisobot_{target_shift}.xlsx"
+        return web.Response(
+            body=excel_bytes,
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+    except Exception as exc:
+        logger.exception("Excel export error: %s", exc)
+        return web.json_response({"ok": False, "error": "Excel hisobotini yaratishda xatolik."}, status=500)
+
 async def api_create_reservation(request: web.Request) -> web.Response:
     try:
         body = await request.json()
@@ -1962,7 +2401,7 @@ async def api_create_reservation(request: web.Request) -> web.Response:
     table_name = str(body.get("table_name") or body.get("table") or "1-Stol").strip()
     hall = str(body.get("hall") or "Asosiy Zal").strip()
     guests = int(body.get("guests") or 2)
-    res_date = str(body.get("res_date") or body.get("date") or datetime.now().strftime("%Y-%m-%d")).strip()
+    res_date = str(body.get("res_date") or body.get("date") or datetime.now(timezone(timedelta(hours=5))).strftime("%Y-%m-%d")).strip()
     res_time = str(body.get("res_time") or body.get("time") or "19:00").strip()
     comment = str(body.get("comment") or "").strip()
     if len(customer_name) < 2 or len(phone) < 7:
@@ -2265,10 +2704,14 @@ async def handle_order_status_callback(callback: types.CallbackQuery):
                 await callback.answer("Buyurtma allaqachon yakunlangan yoki bekor qilingan!", show_alert=True)
                 return
 
-            conn.execute(
-                "UPDATE orders SET status = ?, updated_at_utc = ? WHERE id = ?",
-                (new_status, now_utc, int(order_id_str)),
-            )
+            update_sql = "UPDATE orders SET status = ?, updated_at_utc = ?"
+            update_params = [new_status, now_utc]
+            if new_status in ("cooking", "ready"):
+                update_sql += ", kitchen_status = ?"
+                update_params.append(new_status)
+            update_sql += " WHERE id = ?"
+            update_params.append(int(order_id_str))
+            conn.execute(update_sql, tuple(update_params))
             updated_row = conn.execute("SELECT * FROM orders WHERE id = ?", (int(order_id_str),)).fetchone()
             conn.commit()
 
@@ -2279,7 +2722,24 @@ async def handle_order_status_callback(callback: types.CallbackQuery):
 
         if callback.message:
             new_text = format_order_telegram_html(serialized) + f"\n\n🏷️ <b>Holati:</b> <b>{html.escape(status_label)}</b>"
-            kb = callback.message.reply_markup if new_status not in ("completed", "cancelled") else None
+            kb = None
+            if new_status not in ("completed", "cancelled"):
+                kb = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [
+                            InlineKeyboardButton(text="✅ Qabul qilish", callback_data=f"ordst:{order_id_str}:accepted"),
+                            InlineKeyboardButton(text="👨‍🍳 Oshxonada", callback_data=f"ordst:{order_id_str}:cooking"),
+                            InlineKeyboardButton(text="🔔 Tayyor", callback_data=f"ordst:{order_id_str}:ready"),
+                        ],
+                        [
+                            InlineKeyboardButton(text="🛵 Kuryerda", callback_data=f"ordst:{order_id_str}:delivering"),
+                            InlineKeyboardButton(text="🟢 Yetkazildi", callback_data=f"ordst:{order_id_str}:completed"),
+                        ],
+                        [
+                            InlineKeyboardButton(text="❌ Bekor qilish", callback_data=f"ordst:{order_id_str}:cancelled"),
+                        ],
+                    ]
+                )
             try:
                 await callback.message.edit_text(
                     text=new_text,
@@ -2288,6 +2748,28 @@ async def handle_order_status_callback(callback: types.CallbackQuery):
                 )
             except Exception as edit_err:
                 logger.warning("Telegram callback edit error: %s", edit_err)
+
+        if new_status == "ready" and callback.message and callback.message.bot and GROUP_CHAT_ID:
+            try:
+                tashkent_hm = datetime.now(timezone(timedelta(hours=5))).strftime("%H:%M")
+                loc_label = serialized.get("address") or serialized.get("customer_name") or "Zalda"
+                code_str = serialized.get("order_code") or f"#{order_id_str}"
+                ready_alert = (
+                    f"🔔 <b>OSHXONADAN TAYYOR!</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"🍽️ <b>Buyurtma:</b> <b>{html.escape(code_str)}</b>\n"
+                    f"📍 <b>Joy / Stol:</b> {html.escape(loc_label)}\n"
+                    f"⏰ <b>Vaqt:</b> {tashkent_hm} (Toshkent)\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"👉 Iltimos, mijozga yetkazing yoki stolga xizmat ko'rsating!"
+                )
+                asyncio.create_task(callback.message.bot.send_message(
+                    chat_id=GROUP_CHAT_ID,
+                    text=ready_alert,
+                    parse_mode="HTML"
+                ))
+            except Exception as alert_err:
+                logger.warning("Guruhga oshxona tayyor xabarini yuborishda xatolik: %s", alert_err)
 
         user_id = row["user_id"] if "user_id" in row.keys() else None
         if user_id and callback.bot:
@@ -2424,7 +2906,7 @@ async def handle_user_contact(message: types.Message, bot: Bot):
             f"📞 <b>Telefon:</b> <code>{html.escape(phone)}</code>\n"
             f"🔗 <b>Telegram:</b> {html.escape(username) if username else '<i>mavjud emas</i>'}\n"
             "📱 <b>Manba:</b> Telegram Bot (@americancaffeteri_bot)\n"
-            f"🕒 <b>Vaqt:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
+            f"🕒 <b>Vaqt:</b> {datetime.now(timezone(timedelta(hours=5))).strftime('%d.%m.%Y %H:%M')} (Toshkent UTC+5)\n"
             "──────────────────────────────"
         )
         try:
@@ -2555,11 +3037,13 @@ async def api_admin_trigger_backup(request: web.Request) -> web.Response:
     target_chat = ADMIN_USER_ID or GROUP_CHAT_ID
     if bot_instance and target_chat:
         try:
+            cleanup_old_backups(backup_dir, 14)
             doc = FSInputFile(str(use_file), filename=backup_filename)
             await bot_instance.send_document(
                 chat_id=int(target_chat),
                 document=doc,
-                caption=f"📦 <b>Zaxira nusxasi (cafe_bot.db)</b>\n📅 Sana: {tashkent_now.strftime('%Y-%m-%d %H:%M:%S')}\n☕ American Caffetteria"
+                caption=f"📦 <b>Zaxira nusxasi (cafe_bot.db)</b>\n📅 Sana: {tashkent_now.strftime('%Y-%m-%d %H:%M:%S')}\n☕ American Caffetteria",
+                parse_mode="HTML"
             )
             return web.json_response({"ok": True, "message": "Zaxira nusxasi Telegram orqali yuborildi."})
         except Exception as e:
@@ -2604,6 +3088,7 @@ async def main():
     app.router.add_post("/api/admin/cash-operations", api_admin_add_cash_operation)
     app.router.add_get("/api/admin/backup", api_admin_trigger_backup)
     app.router.add_post("/api/admin/backup", api_admin_trigger_backup)
+    app.router.add_get("/api/admin/export-excel", api_admin_export_excel)
     app.router.add_get("/api/admin/stream", api_admin_sse_stream)
     app.router.add_get("/api/stream", api_public_sse_stream)
 
@@ -2664,11 +3149,13 @@ async def main():
                             nightly_file = backup_dir / nightly_filename
                             success = create_sqlite_backup_file(nightly_file)
                             use_file = nightly_file if (success and nightly_file.exists()) else DB_PATH
+                            cleanup_old_backups(backup_dir, 14)
                             doc = FSInputFile(str(use_file), filename=nightly_filename)
                             await bot_instance.send_document(
                                 chat_id=int(target_chat),
                                 document=doc,
-                                caption=f"🌙 <b>Avtomatik tungi zaxira nusxasi (cafe_bot.db)</b>\n📅 Smena: {get_tashkent_shift_date()}\n⏰ Vaqt: 05:00 (Toshkent)\n☕ American Caffetteria"
+                                caption=f"🌙 <b>Avtomatik tungi zaxira nusxasi (cafe_bot.db)</b>\n📅 Smena: {get_tashkent_shift_date()}\n⏰ Vaqt: 05:00 (Toshkent)\n☕ American Caffetteria",
+                                parse_mode="HTML"
                             )
                             last_date = today
                             logger.info("Tungi zaxira nusxasi Telegramga yuborildi.")

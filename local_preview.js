@@ -57,6 +57,34 @@ const PROMO_CODES = {
   BLEST10: 0.10,
 };
 
+let catalogPrices = {};
+try {
+  const menuJsPath = path.join(ROOT_DIR, 'menu_data.js');
+  if (fs.existsSync(menuJsPath)) {
+    const content = fs.readFileSync(menuJsPath, 'utf8');
+    const m = content.match(/window\.menuItems\s*=\s*(\[[\s\S]*?\]);/);
+    if (m) {
+      const parsed = JSON.parse(m[1]);
+      for (const item of parsed) {
+        if (item.id && item.price) {
+          catalogPrices[item.id] = Number(item.price);
+        }
+      }
+    }
+  }
+} catch (_) {}
+
+function sanitizeItems(arr) {
+  return (Array.isArray(arr) ? arr : []).map((it) => {
+    const iid = String(it.id || '').trim();
+    const baseId = iid.includes('_') ? iid.substring(0, iid.lastIndexOf('_')) : iid;
+    const catPrice = catalogPrices[iid] !== undefined ? catalogPrices[iid] : catalogPrices[baseId];
+    const price = catPrice !== undefined ? catPrice : Number(it.price || 0);
+    const qty = Math.max(1, Math.min(99, Number(it.qty || it.quantity || 1)));
+    return { ...it, price, qty };
+  });
+}
+
 const sseClients = new Set();
 let mockOrders = [];
 let mockReservations = [];
@@ -371,6 +399,38 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
     return;
   }
 
+  if (pathname === '/api/admin/export-excel') {
+    if (!isAdminAuthed) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Avtorizatsiya talab qilinadi' }));
+      return;
+    }
+    if (!['admin', 'owner', 'cashier'].includes(authRole)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Faqat boshqaruvchi va kassir hisobotni yuklab olishi mumkin' }));
+      return;
+    }
+    const targetShift = (parsedReqUrl.query && parsedReqUrl.query.date) || new Date().toISOString().slice(0, 10);
+    try {
+      const child_process = require('child_process');
+      const pyCode = `import sys\nsys.path.insert(0, 'telegram_bot')\nimport bot\ndata = bot.generate_excel_report_bytes('${targetShift}', '${authUser || "admin"}')\nsys.stdout.buffer.write(data)\n`;
+      const excelBuf = child_process.execFileSync('python', ['-c', pyCode], { cwd: ROOT_DIR });
+      const filename = `American_Caffetteria_Hisobot_${targetShift}.xlsx`;
+      res.writeHead(200, {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Length': excelBuf.length,
+      });
+      res.end(excelBuf);
+      return;
+    } catch (err) {
+      console.error('Excel export error in local_preview:', err);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Excel generatsiyasida xatolik' }));
+      return;
+    }
+  }
+
   if (pathname === '/api/admin/stream') {
     if (!isAdminAuthed) {
       res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -446,7 +506,7 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
         return false;
       });
       if (activeOrder) {
-        const newItems = Array.isArray(body.items) ? body.items : [];
+        const newItems = sanitizeItems(body.items);
         activeOrder.items = [...activeOrder.items, ...newItems];
         activeOrder.subtotal = activeOrder.items.reduce((s, it) => s + Number(it.price || 0) * Number(it.qty || 1), 0);
         const disc = Number(activeOrder.discount || 0);
@@ -466,7 +526,7 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
     }
 
     const id = nextOrderId++;
-    const items = Array.isArray(body.items) ? body.items : [];
+    const items = sanitizeItems(body.items);
     const subtotal = items.reduce((s, it) => s + Number(it.price || 0) * Number(it.qty || 1), 0) || Number(body.subtotal || body.totalAmount || 50000);
     const promoCode = String(body.promo_code || '').trim().toUpperCase();
     const rate = PROMO_CODES[promoCode] || 0;
@@ -547,6 +607,11 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       res.end(JSON.stringify({ ok: false, error: 'Avtorizatsiya talab qilinadi' }));
       return;
     }
+    if (!['admin', 'owner', 'cashier', 'waiter'].includes(authRole)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: "Faqat ofitsiant, kassir va boshqaruvchi do-zakaz qila oladi" }));
+      return;
+    }
     const ordId = parseInt(orderAppendMatch[1], 10);
     let target = mockOrders.find((o) => o.id === ordId);
     if (!target) {
@@ -559,7 +624,7 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       res.end(JSON.stringify({ ok: false, error: "Yopilgan yoki bekor qilingan buyurtmaga taom qo'shib bo'lmaydi" }));
       return;
     }
-    const newItems = Array.isArray(body.items) ? body.items : [];
+    const newItems = sanitizeItems(body.items);
     target.items = [...target.items, ...newItems];
     target.subtotal = target.items.reduce((s, it) => s + Number(it.price || 0) * Number(it.qty || 1), 0);
     const disc = Number(target.discount || 0);
@@ -866,7 +931,7 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       op_type: String(body.type || body.op_type || 'cash_in'),
       amount: Number(body.amount || 0),
       reason: String(body.reason || ''),
-      operator: String(body.operator || 'admin'),
+      operator: String(authUser || 'admin'),
       created_at_utc: new Date().toISOString(),
     };
     mockCashOps.unshift(op);

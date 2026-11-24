@@ -500,9 +500,14 @@
         <div style="width:100%;">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
             <h3 style="font-size:18px; font-weight:800;">🍽️ Ofitsiantlar Smena Hisoboti & 10% Xizmat Haqi</h3>
-            <button id="btn-download-db-backup" type="button" class="header-btn" style="background:#0284c7; color:#fff; padding:6px 14px; font-size:13px; font-weight:700;">
-              <i class="ti ti-download"></i> <span>Baza zaxira nusxasi (Backup)</span>
-            </button>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button id="btn-download-excel-report" type="button" class="header-btn" style="background:#10b981; border:1px solid #059669; color:#fff; padding:6px 14px; font-size:13px; font-weight:700;">
+                <i class="ti ti-file-spreadsheet"></i> <span>Excel hisobot (.xlsx)</span>
+              </button>
+              <button id="btn-download-db-backup" type="button" class="header-btn" style="background:#0284c7; color:#fff; padding:6px 14px; font-size:13px; font-weight:700;">
+                <i class="ti ti-download"></i> <span>Baza zaxira nusxasi (Backup)</span>
+              </button>
+            </div>
           </div>
           <div id="report-waiters-list" style="overflow-x:auto;">
             <!-- Rendered by admin.js -->

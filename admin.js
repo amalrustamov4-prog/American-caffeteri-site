@@ -546,6 +546,32 @@
       });
     });
 
+    // Excel Report Download
+    document.getElementById("btn-download-excel-report")?.addEventListener("click", async () => {
+      try {
+        const todayStr = state.selectedShiftDate || new Date().toISOString().slice(0, 10);
+        const res = await fetch(getAdminApiUrl(`/api/admin/export-excel?date=${todayStr}`), {
+          headers: getAuthHeaders(),
+        });
+        if (!res.ok) {
+          alert("Excel hisobotini yuklab olishda xatolik: " + res.status);
+          return;
+        }
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `American_Caffetteria_Hisobot_${todayStr}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error("Excel download error:", err);
+        alert("Excel hisobotini yuklab olishda xatolik yuz berdi.");
+      }
+    });
+
     // DB Backup Download
     document.getElementById("btn-download-db-backup")?.addEventListener("click", async () => {
       try {
@@ -786,6 +812,11 @@
     } else if (role === "cashier") {
       if (btnStoplist) btnStoplist.style.display = "none";
       switchTab("pos");
+    }
+
+    const btnExcel = document.getElementById("btn-download-excel-report");
+    if (btnExcel) {
+      btnExcel.style.display = (role === "admin" || role === "owner" || role === "cashier") ? "" : "none";
     }
 
     const btnBackup = document.getElementById("btn-download-db-backup");
@@ -2146,6 +2177,8 @@
       const ordTotal = getOrderTotal(ord);
       const ordCode = getOrderCode(ord);
 
+      const canManagePaymentsAndCancel = ["admin", "owner", "cashier"].includes(state.role);
+
       const isUnpaidDineIn =
         isDineIn &&
         (ord.payment_status === "pending" || ord.payment_method === "unpaid") &&
@@ -2197,9 +2230,10 @@
 
         <div class="order-actions-row">
           ${isUnpaidDineIn ? `
+            ${canManagePaymentsAndCancel ? `
             <button type="button" class="btn-action-pay-exit btn-pay-exit-ord" data-id="${ord.id}" title="Chiqishda to'lovni qabul qilish" style="background:#10b981; border-color:#059669; color:#fff; font-weight:800; padding:6px 10px; font-size:12px; cursor:pointer;">
               💳 Chiqishda to'lov
-            </button>
+            </button>` : ""}
             <button type="button" class="btn-action-print btn-print-precheck" data-id="${ord.id}" title="Predchek chiqarish" style="background:rgba(245,158,11,0.2); border-color:rgba(245,158,11,0.5); color:#f59e0b; font-weight:700; padding:6px 10px; font-size:12px; cursor:pointer;">
               🧾 Predchek
             </button>
@@ -2212,7 +2246,7 @@
             <i class="ti ti-printer"></i>
           </button>
           ${
-            st !== "cancelled" && st !== "completed"
+            st !== "cancelled" && st !== "completed" && canManagePaymentsAndCancel
               ? `<button type="button" class="btn-action-print btn-cancel-ord" data-id="${ord.id}" style="color:#ef4444;" title="${t("act_cancel")}">
                   <i class="ti ti-x"></i>
                 </button>`
@@ -3173,6 +3207,7 @@
 
   // ==================== SHIFT REPORT (X-REPORT / Z-REPORT & TOP-5 DISHES) ====================
   async function fetchStats() {
+    if (!["admin", "owner", "cashier"].includes(state.role)) return;
     try {
       const res = await fetch(getAdminApiUrl("/api/admin/stats"), { headers: getAuthHeaders() });
       if (res.ok) {
