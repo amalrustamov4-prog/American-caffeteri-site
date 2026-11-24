@@ -1,0 +1,43 @@
+# American Caffetteria — Production Caddyfile
+# Automatic HTTPS via Let's Encrypt / ZeroSSL
+
+{
+    email admin@americancaffetteria.uz
+    admin off
+}
+
+# Change to your production domain, e.g., pos.americancaffetteria.uz
+:80, :443 {
+    encode gzip zstd
+
+    # Real-time SSE Endpoints: Disable buffering and flush immediately
+    @sse path /api/stream /api/admin/stream
+    handle @sse {
+        reverse_proxy app:8080 {
+            flush_interval -1
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # All other HTTP requests & static assets
+    handle {
+        reverse_proxy app:8080 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # Security Headers
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        -Server
+    }
+}

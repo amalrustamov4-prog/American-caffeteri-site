@@ -7,8 +7,9 @@
     "start": "python -m http.server 3000",
     "cap:sync": "cap sync",
     "cap:android": "cap open android",
+    "cap:ios": "cap open ios",
     "sync": "python sync_web.py",
-    "test": "python tests/test_suite.py && python tests/test_realtime_endpoints.py",
+    "test": "python tests/test_suite.py && python tests/test_realtime_endpoints.py && python tests/test_bot_http.py",
     "zip": "python make_export_zips.py",
     "deploy:vercel": "vercel build --prod --yes && vercel deploy --prebuilt --prod --yes"
   },
@@ -25,7 +26,8 @@
   },
   "devDependencies": {
     "@capacitor/android": "^6.2.0",
-    "@capacitor/cli": "^6.2.0"
+    "@capacitor/cli": "^6.2.0",
+    "@capacitor/ios": "^6.2.0"
   }
 }
 

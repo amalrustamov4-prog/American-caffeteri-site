@@ -12,6 +12,13 @@ android/capacitor-android/build/
 *.apk
 *.aab
 
+# iOS & Xcode
+ios/App/Pods/
+ios/App/Podfile.lock
+ios/DerivedData/
+*.xcarchive
+*.ipa
+
 # Python
 __pycache__/
 *.py[cod]

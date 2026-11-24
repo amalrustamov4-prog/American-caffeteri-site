@@ -40,6 +40,11 @@ def main():
     base = "http://127.0.0.1:3456"
 
     try:
+        # 0. GET /api/health (Healthcheck verification)
+        st_h, d_h = req_json(f"{base}/api/health", "GET")
+        assert st_h == 200 and d_h.get("ok") and d_h.get("db") == "ok", f"Healthcheck failed: {d_h}"
+        print("0. GET /api/health -> SUCCESS (db: ok, 200 OK)")
+
         # 1. POST /api/admin/login
         st, d1 = req_json(f"{base}/api/admin/login", "POST", {"username": "admin", "password": "admin123!"})
         assert st == 200 and d1.get("ok") and d1.get("token"), f"Login failed: {d1}"
@@ -334,7 +339,11 @@ def main():
         st_c_xl, _ = req_json(f"{base}/api/admin/export-excel", "GET", None, courier_hdr)
         assert st_c_xl == 403, f"Expected 403 for courier exporting excel, got {st_c_xl}"
 
-        req_xl = urllib.request.Request(f"{base}/api/admin/export-excel", headers=auth_hdr)
+        # 23. Export Excel with query date & Injection Protection
+        st_inj, d_inj = req_json(f"{base}/api/admin/export-excel?date=2026-11-24'__import__('os')", "GET", None, auth_hdr)
+        assert st_inj == 400 and not d_inj.get("ok"), f"Expected 400 for malicious date parameter, got {st_inj}: {d_inj}"
+
+        req_xl = urllib.request.Request(f"{base}/api/admin/export-excel?date=2026-11-24", headers=auth_hdr)
         with opener.open(req_xl, timeout=5) as xl_resp:
             assert xl_resp.status == 200, f"Expected 200 for admin exporting excel, got {xl_resp.status}"
             ct = xl_resp.headers.get("Content-Type", "")
@@ -347,10 +356,10 @@ def main():
                 assert "xl/workbook.xml" in names, "Missing xl/workbook.xml"
                 for i in range(1, 7):
                     assert f"xl/worksheets/sheet{i}.xml" in names, f"Missing xl/worksheets/sheet{i}.xml"
-        print("22. GET /api/admin/export-excel (RBAC 403 for courier, 200 & valid 6-sheet .xlsx for admin) -> SUCCESS")
+        print("22-23. GET /api/admin/export-excel (RBAC 403 for courier, injection 400, 200 & valid 6-sheet .xlsx for admin) -> SUCCESS")
 
         print("\n==========================================")
-        print("  NATIJA: 22/22 PASS (100% SUCCESS)       ")
+        print("  NATIJA: 23/23 PASS (100% SUCCESS)       ")
         print("==========================================\n")
     finally:
         proc.terminate()

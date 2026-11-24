@@ -1,0 +1,80 @@
+name: Build iOS Application (Capacitor)
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_configuration:
+        description: 'Xcode Build Configuration (Release or Debug)'
+        required: true
+        default: 'Release'
+        type: choice
+        options:
+          - Release
+          - Debug
+
+jobs:
+  build-ios:
+    name: Build iOS Xcode App
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Node dependencies
+        run: npm install
+
+      - name: Synchronize Web Assets & Capacitor iOS
+        run: |
+          python3 sync_web.py
+          npx cap sync ios
+
+      - name: Install CocoaPods Dependencies
+        run: |
+          cd ios/App
+          pod install
+
+      - name: Build Xcode Workspace (Validation / Unsigned)
+        run: |
+          xcodebuild \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration ${{ github.event.inputs.build_configuration || 'Release' }} \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            clean build
+
+      - name: Upload Build Artifact (.app bundle)
+        uses: actions/upload-artifact@v4
+        with:
+          name: American-Caffetteria-iOS-App
+          path: ~/Library/Developer/Xcode/DerivedData/**/Build/Products/*-iphoneos/*.app
+          if-no-files-found: warn
+
+# ==============================================================================
+# INSTRUCTIONS FOR PRODUCTION TESTFLIGHT / APP STORE DEPLOYMENT:
+#
+# To produce a signed .ipa and upload to Apple TestFlight / App Store:
+# 1. Join Apple Developer Program ($99/year) at developer.apple.com.
+# 2. Export your Apple Distribution Certificate (.p12) and App Store Provisioning Profile (.mobileprovision).
+# 3. Add base64-encoded secrets in GitHub Repo Settings -> Secrets and variables -> Actions:
+#    - APPLE_CERTIFICATE_BASE64: base64 of your distribution certificate .p12
+#    - APPLE_CERTIFICATE_PASSWORD: password of the .p12 file
+#    - APPLE_PROVISIONING_PROFILE_BASE64: base64 of your .mobileprovision file
+#    - APP_STORE_CONNECT_API_KEY / ISSUER_ID / KEY_ID: for altool / Transporter CLI
+# 4. Use `fastlane match` or `apple-actions/import-codesign-certs` in GitHub Actions
+#    to sign the archive and run `xcrun altool --upload-app` or fastlane deliver.
+# ==============================================================================

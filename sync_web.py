@@ -5,6 +5,7 @@ import os
 ROOT = Path(__file__).resolve().parent
 WWW = ROOT / "www"
 ANDROID_ASSETS = ROOT / "android" / "app" / "src" / "main" / "assets" / "public"
+IOS_ASSETS = ROOT / "ios" / "App" / "App" / "public"
 
 FILES_TO_SYNC = [
     "index.html",
@@ -48,6 +49,18 @@ def sync_targets():
         if src_images.exists():
             shutil.copytree(src_images, dst_android_imgs, dirs_exist_ok=True)
         print(f"[SYNC] Synchronized all assets to Android Capacitor ({ANDROID_ASSETS})")
+
+    # 4. Sync to iOS capacitor assets if exists
+    if IOS_ASSETS.exists():
+        for fname in FILES_TO_SYNC:
+            src = ROOT / fname
+            dst = IOS_ASSETS / fname
+            if src.exists():
+                shutil.copy2(src, dst)
+        dst_ios_imgs = IOS_ASSETS / "images"
+        if src_images.exists():
+            shutil.copytree(src_images, dst_ios_imgs, dirs_exist_ok=True)
+        print(f"[SYNC] Synchronized all assets to iOS Capacitor ({IOS_ASSETS})")
 
 if __name__ == "__main__":
     sync_targets()

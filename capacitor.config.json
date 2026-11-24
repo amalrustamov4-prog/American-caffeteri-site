@@ -4,10 +4,15 @@
   "webDir": "www",
   "bundledWebRuntime": false,
   "server": {
-    "androidScheme": "https"
+    "androidScheme": "https",
+    "iosScheme": "https"
   },
   "android": {
     "backgroundColor": "#232424"
+  },
+  "ios": {
+    "backgroundColor": "#232424",
+    "contentInset": "automatic"
   },
   "plugins": {
     "SplashScreen": {

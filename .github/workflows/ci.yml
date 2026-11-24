@@ -40,16 +40,19 @@ jobs:
           node --check sw.js
           node --check api/orders.mjs
           node --check api/register.mjs
-          python -m py_compile telegram_bot/bot.py sync_web.py tests/test_suite.py tests/test_realtime_endpoints.py
+          python -m py_compile telegram_bot/bot.py sync_web.py make_export_zips.py tests/test_suite.py tests/test_realtime_endpoints.py tests/test_bot_http.py
 
-      - name: Sync web assets to www/ and Android
+      - name: Sync web assets to www/, Android and iOS
         run: python sync_web.py
 
       - name: Run unit & catalog tests (3/3)
         run: python tests/test_suite.py
 
-      - name: Run Real-Time POS & API endpoint tests (9/9)
+      - name: Run Real-Time POS & API endpoint tests (23/23)
         run: python tests/test_realtime_endpoints.py
+
+      - name: Run live bot.py HTTP integration tests (9/9)
+        run: python tests/test_bot_http.py
 
   build-docker:
     name: Build Docker Image

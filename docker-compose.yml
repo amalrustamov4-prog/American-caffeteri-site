@@ -15,3 +15,4 @@ services:
       - DB_PATH=/app/telegram_bot/data/cafe_bot.db
     volumes:
       - ./telegram_bot/data:/app/telegram_bot/data
+      - ./telegram_bot/backups:/app/telegram_bot/backups

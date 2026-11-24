@@ -138,7 +138,7 @@ const server = http.createServer(async (req, res) => {
   const pathname = parsedUrl.pathname;
 
   const origin = req.headers.origin || '';
-  const isAllowedOrigin = /^(https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?|http:\/\/192\.168\.\d{1,3}\.\d{1,3}(:\d+)?|http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?|capacitor:\/\/localhost|https?:\/\/([a-zA-Z0-9-]+\.)*telegram\.org)$/.test(origin);
+  const isAllowedOrigin = /^(https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?|http:\/\/192\.168\.\d{1,3}\.\d{1,3}(:\d+)?|http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?|capacitor:\/\/localhost|ionic:\/\/localhost|https:\/\/localhost|https?:\/\/([a-zA-Z0-9-]+\.)*telegram\.org)$/.test(origin);
   if (isAllowedOrigin && origin) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -282,6 +282,12 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
     }
   }
 
+  if (pathname === '/api/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, db: 'ok', bot_configured: false, time_tashkent: new Date().toISOString() }));
+    return;
+  }
+
   if (pathname === '/api/admin/login' && req.method === 'POST') {
     const pin = String(body.pin || '').trim();
     let user = 'admin';
@@ -410,11 +416,32 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       res.end(JSON.stringify({ ok: false, error: 'Faqat boshqaruvchi va kassir hisobotni yuklab olishi mumkin' }));
       return;
     }
-    const targetShift = (parsedReqUrl.query && parsedReqUrl.query.date) || new Date().toISOString().slice(0, 10);
+    const rawDate = parsedReqUrl.query && parsedReqUrl.query.date;
+    let targetShift;
+    if (rawDate) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: "Noto'g'ri sana formati (YYYY-MM-DD kutiladi)" }));
+        return;
+      }
+      targetShift = rawDate;
+    } else {
+      targetShift = new Date().toISOString().slice(0, 10);
+    }
     try {
       const child_process = require('child_process');
-      const pyCode = `import sys\nsys.path.insert(0, 'telegram_bot')\nimport bot\ndata = bot.generate_excel_report_bytes('${targetShift}', '${authUser || "admin"}')\nsys.stdout.buffer.write(data)\n`;
-      const excelBuf = child_process.execFileSync('python', ['-c', pyCode], { cwd: ROOT_DIR });
+      let pyBin = 'python3';
+      try {
+        child_process.execFileSync(pyBin, ['--version'], { stdio: 'ignore' });
+      } catch (_) {
+        pyBin = 'python';
+      }
+      const pyCode = 'import sys\nsys.path.insert(0, "telegram_bot")\nimport bot\ntarget_shift = sys.argv[1]\noperator = sys.argv[2]\ndata = bot.generate_excel_report_bytes(target_shift, operator)\nsys.stdout.buffer.write(data)\n';
+      const excelBuf = child_process.execFileSync(
+        pyBin,
+        ['-c', pyCode, targetShift, String(authUser || 'admin')],
+        { cwd: ROOT_DIR, maxBuffer: 10 * 1024 * 1024 }
+      );
       const filename = `American_Caffetteria_Hisobot_${targetShift}.xlsx`;
       res.writeHead(200, {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

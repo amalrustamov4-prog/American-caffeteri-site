@@ -157,6 +157,15 @@ def test_html_and_assets():
 
     courier_file = ROOT / "courier.html"
     assert courier_file.exists(), "courier.html отсутствует!"
+    cour_content = courier_file.read_text(encoding="utf-8")
+
+    # Check iOS PWA / Notch / Dynamic Island meta tags across all 3 HTML files
+    for fname, html_doc in [("index.html", idx_content), ("admin.html", admin_content), ("courier.html", cour_content)]:
+        assert "viewport-fit=cover" in html_doc, f"viewport-fit=cover missing in {fname}"
+        assert "apple-mobile-web-app-capable" in html_doc, f"apple-mobile-web-app-capable missing in {fname}"
+        assert "apple-mobile-web-app-status-bar-style" in html_doc, f"apple-mobile-web-app-status-bar-style missing in {fname}"
+        assert "apple-touch-icon" in html_doc, f"apple-touch-icon missing in {fname}"
+    print("iOS PWA & Safe-area meta tags verified across index.html, admin.html and courier.html")
     
     manifest_file = ROOT / "manifest.json"
     assert manifest_file.exists(), "manifest.json отсутствует!"

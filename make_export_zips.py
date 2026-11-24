@@ -16,6 +16,8 @@ EXCLUDE_DIRS = {
     "build",
     ".vercel",
     "backups",
+    "Pods",
+    "DerivedData",
 }
 
 EXCLUDE_EXTS = {
@@ -28,6 +30,9 @@ EXCLUDE_EXTS = {
     ".db-shm",
     ".sqlite",
     ".sqlite3",
+    ".xcarchive",
+    ".ipa",
+    ".app",
 }
 
 EXCLUDE_FILES = {

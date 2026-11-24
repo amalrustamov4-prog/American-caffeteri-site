@@ -34,7 +34,7 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
 
   // 0. Никогда не перехватываем внутренние ресурсы Capacitor Android / iOS
-  if (url.protocol === "capacitor:" || (url.hostname === "localhost" && !url.port && url.protocol === "https:")) {
+  if (url.protocol === "capacitor:" || url.protocol === "ionic:" || (url.hostname === "localhost" && !url.port && url.protocol === "https:")) {
     return;
   }
 

@@ -221,7 +221,7 @@ body {
 .admin-header {
   background: var(--bg-panel);
   border-bottom: 2px solid var(--ink);
-  padding: 8px 18px;
+  padding: calc(8px + env(safe-area-inset-top, 0px)) 18px 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;

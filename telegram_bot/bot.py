@@ -121,7 +121,7 @@ ALLOWED_ORIGINS = {
     o.strip()
     for o in os.getenv(
         "ALLOWED_ORIGINS",
-        "http://localhost:8080,http://127.0.0.1:8080,capacitor://localhost,http://localhost,https://american11.vercel.app,https://american11-fullforever.vercel.app",
+        "http://localhost:8080,http://127.0.0.1:8080,capacitor://localhost,ionic://localhost,https://localhost,http://localhost,https://american11.vercel.app,https://american11-fullforever.vercel.app",
     ).split(",")
     if o.strip()
 }
@@ -185,6 +185,9 @@ def load_menu_catalog() -> Dict[str, Dict[str, Any]]:
                 price_val = int(it.get("price", 0))
                 catalog[item_id] = {"id": item_id, "name": name_str, "price": price_val}
                 catalog[str(idx)] = {"id": item_id, "name": name_str, "price": price_val}
+                for prefix in ("drink_", "food_", "burger_", "pizza_", "snack_", "dessert_", "sauce_", "salad_"):
+                    if item_id.startswith(prefix):
+                        catalog[item_id[len(prefix):]] = catalog[item_id]
                 # Izoh
                 sizes = it.get("sizes")
                 if isinstance(sizes, list):
@@ -1121,7 +1124,7 @@ def get_order_shift_date(date_str: str) -> str:
 # HTTP API HANDLERS (AIOHTTP)
 # =====================================================================
 CORS_ORIGIN_REGEX = re.compile(
-    r"^(https?://(localhost|127\.0\.0\.1)(:\d+)?|http://192\.168\.\d{1,3}\.\d{1,3}(:\d+)?|http://10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?|capacitor://localhost|https?://([a-zA-Z0-9-]+\.)*vercel\.app|https?://([a-zA-Z0-9-]+\.)*telegram\.org)$"
+    r"^(https?://(localhost|127\.0\.0\.1)(:\d+)?|http://192\.168\.\d{1,3}\.\d{1,3}(:\d+)?|http://10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?|capacitor://localhost|ionic://localhost|https://localhost|https?://([a-zA-Z0-9-]+\.)*vercel\.app|https?://([a-zA-Z0-9-]+\.)*telegram\.org)$"
 )
 
 def check_csrf_protection(request: web.Request) -> bool:
@@ -1319,6 +1322,19 @@ async def handle_order_append_logic(request: web.Request, order_id: int, payload
         qty = max(1, min(99, int(it.get("qty") or it.get("quantity") or 1)))
         price = int(it.get("price") or 0)
         cat_dish = MENU_CATALOG.get(iid) or MENU_CATALOG.get(base_id)
+        if not cat_dish and iid:
+            for pref in ("drink_", "food_", "burger_", "pizza_", "snack_", "dessert_"):
+                if f"{pref}{iid}" in MENU_CATALOG:
+                    cat_dish = MENU_CATALOG[f"{pref}{iid}"]
+                    break
+        if not cat_dish:
+            it_name_lower = str(it.get("name") or "").strip().lower()
+            if it_name_lower:
+                for dish in MENU_CATALOG.values():
+                    dname = str(dish.get("name") or "").strip().lower()
+                    if dname and (it_name_lower == dname or it_name_lower in dname or dname in it_name_lower):
+                        cat_dish = dish
+                        break
         if cat_dish:
             cd_name = cat_dish.get("name")
             if isinstance(cd_name, dict):
@@ -2372,13 +2388,41 @@ def generate_excel_report_bytes(target_shift: str, operator_name: str) -> bytes:
 
     return buf.getvalue()
 
+async def api_health(request: web.Request) -> web.Response:
+    """Sog'lomlik tekshiruvi (Healthcheck) — SQLite va bot konfiguratsiyasini tekshiradi."""
+    tashkent_now_str = datetime.now(timezone(timedelta(hours=5))).strftime("%Y-%m-%d %H:%M:%S (UTC+5)")
+    try:
+        with get_db_connection() as conn:
+            conn.execute("SELECT 1").fetchone()
+        return web.json_response({
+            "ok": True,
+            "db": "ok",
+            "bot_configured": bool(BOT_TOKEN),
+            "time_tashkent": tashkent_now_str,
+        }, status=200)
+    except Exception as db_err:
+        logger.error("Healthcheck DB xatosi: %s", db_err)
+        return web.json_response({
+            "ok": False,
+            "db": "error",
+            "bot_configured": bool(BOT_TOKEN),
+            "error": str(db_err),
+            "time_tashkent": tashkent_now_str,
+        }, status=503)
+
 async def api_admin_export_excel(request: web.Request) -> web.Response:
     role, username = get_authenticated_user_info(request)
     if not role:
         return web.json_response({"ok": False, "error": "Avtorizatsiya talab qilinadi."}, status=401)
     if role not in ("admin", "owner", "cashier"):
         return web.json_response({"ok": False, "error": "Faqat boshqaruvchi va kassir hisobotni yuklab olishi mumkin."}, status=403)
-    target_shift = request.query.get("date") or get_tashkent_shift_date()
+    raw_date = request.query.get("date")
+    if raw_date:
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", raw_date):
+            return web.json_response({"ok": False, "error": "Noto'g'ri sana formati (YYYY-MM-DD kutiladi)."}, status=400)
+        target_shift = raw_date
+    else:
+        target_shift = get_tashkent_shift_date()
     try:
         excel_bytes = generate_excel_report_bytes(target_shift, username or "admin")
         filename = f"American_Caffetteria_Hisobot_{target_shift}.xlsx"
@@ -3091,6 +3135,7 @@ async def main():
     app.router.add_get("/api/admin/export-excel", api_admin_export_excel)
     app.router.add_get("/api/admin/stream", api_admin_sse_stream)
     app.router.add_get("/api/stream", api_public_sse_stream)
+    app.router.add_get("/api/health", api_health)
 
     # Statik fayllar
     app.router.add_get("/", serve_index)
@@ -3109,6 +3154,30 @@ async def main():
     await site.start()
     logger.info("HTTP Server ishga tushdi: http://%s:%d/admin.html", HOST, PORT)
     logger.info("Admin tizimga kirish login: '%s'", ADMIN_USERNAME)
+
+    # Xavfsizlik tekshiruvi: standart/test sirlari haqida ogohlantirish
+    weak_secrets = []
+    if ADMIN_PASSWORD == "admin123!":
+        weak_secrets.append("ADMIN_PASSWORD='admin123!'")
+    if ADMIN_SESSION_SECRET == "american_caffetteria_secret_2026":
+        weak_secrets.append("ADMIN_SESSION_SECRET is default")
+    if os.getenv("PIN_OWNER", "7777") == "7777":
+        weak_secrets.append("PIN_OWNER='7777'")
+    if os.getenv("PIN_CASHIER", "1111") == "1111":
+        weak_secrets.append("PIN_CASHIER='1111'")
+    if os.getenv("PIN_WAITER", "2222") == "2222":
+        weak_secrets.append("PIN_WAITER='2222'")
+    if os.getenv("PIN_KITCHEN", "3333") == "3333":
+        weak_secrets.append("PIN_KITCHEN='3333'")
+    if os.getenv("PIN_COURIER", "4444") == "4444":
+        weak_secrets.append("PIN_COURIER='4444'")
+
+    if weak_secrets:
+        logger.warning(
+            "⚠️ [XAVFSIZLIK OGOHLANTIRISHI / SECURITY WARNING] Standart test parollari aniqlandi: %s. "
+            "Ishlab chiqarish (Production VPS) serverida .env faylida kuchli parollar va PIN-kodlar o'rnating!",
+            ", ".join(weak_secrets)
+        )
 
     if bot_instance:
         if WEBAPP_URL.startswith("https://"):
