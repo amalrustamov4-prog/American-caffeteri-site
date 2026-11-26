@@ -230,6 +230,12 @@ body {
   z-index: 50;
 }
 
+@media (max-width: 768px) {
+  .admin-header {
+    padding-top: max(calc(8px + env(safe-area-inset-top, 0px)), 44px) !important;
+  }
+}
+
 .header-left {
   display: flex;
   align-items: center;

@@ -1,11 +1,11 @@
-const CACHE_NAME = "american-caffetteria-v34-studio-hd";
+const CACHE_NAME = "american-caffetteria-v35-studio-hd";
 const PRECACHE_ASSETS = [
   "/",
   "/index.html",
   "/courier.html",
-  "/style.css?v=34",
-  "/app.js?v=34",
-  "/menu_data.js?v=34",
+  "/style.css?v=35",
+  "/app.js?v=35",
+  "/menu_data.js?v=35",
   "/manifest.json",
 ];
 

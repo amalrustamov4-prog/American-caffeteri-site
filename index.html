@@ -22,7 +22,20 @@
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.4/dist/confetti.browser.min.js"></script>
 
   <!-- Custom Stylesheet -->
-  <link rel="stylesheet" href="style.css?v=33">
+  <link rel="stylesheet" href="style.css?v=35">
+
+  <!-- Instant iOS Notch / Safe-Area Detector (Prevents Layout Shift) -->
+  <script>
+    (function() {
+      var isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      if (isIOS) {
+        document.documentElement.classList.add('is-ios');
+        if (window.navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.Capacitor) {
+          document.documentElement.classList.add('is-ios-standalone');
+        }
+      }
+    })();
+  </script>
 </head>
 <body class="paper text-[#232424] antialiased selection:bg-[#EB2A2A] selection:text-white">
 
@@ -30,7 +43,7 @@
   <div id="scroll-progress"></div>
 
   <!-- MASTHEAD / HEADER -->
-  <header id="top" class="px-3 sm:px-6 md:px-12 pt-2 sm:pt-3 pb-2.5 border-b-2 border-[#232424] sticky top-0 bg-[#DEDBD4]/95 backdrop-blur-md z-40">
+  <header id="top" class="px-3 sm:px-6 md:px-12 pb-2.5 border-b-2 border-[#232424] sticky top-0 bg-[#DEDBD4]/95 backdrop-blur-md z-40">
     <div class="flex flex-wrap items-center justify-between gap-1.5 text-[11px] sm:text-[12px] uppercase tracking-wider pb-1.5 border-b border-[#232424]/15">
       <div class="flex items-center gap-1.5 min-w-0">
         <span class="pulse-dot flex-shrink-0" id="header-beacon"></span>
@@ -934,7 +947,7 @@
       )) ? 'https://american11.vercel.app' : ''
     );
   </script>
-  <script src="menu_data.js?v=34"></script>
-  <script src="app.js?v=34"></script>
+  <script src="menu_data.js?v=35"></script>
+  <script src="app.js?v=35"></script>
 </body>
 </html>

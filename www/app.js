@@ -686,6 +686,19 @@ try {
 
     document.body.classList.remove('env-desktop', 'env-mobile', 'env-tma', 'env-capacitor');
 
+    // Detect iOS devices for specific notch and status bar handling
+    const isIOSDevice = /iPhone|iPad|iPod/i.test(navigator.userAgent || '') || 
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (isIOSDevice) {
+      document.documentElement.classList.add('is-ios');
+      document.body.classList.add('is-ios');
+      const isStandalonePWA = window.navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+      if (isStandalonePWA || window.Capacitor) {
+        document.documentElement.classList.add('is-ios-standalone');
+        document.body.classList.add('is-ios-standalone');
+      }
+    }
+
     // Detect Capacitor native Android/iOS
     const isCapacitorNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
     if (isCapacitorNative) {

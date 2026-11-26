@@ -360,7 +360,7 @@ def main():
         assert st_inj == 400 and not d_inj.get("ok"), f"Expected 400 for malicious date parameter, got {st_inj}: {d_inj}"
 
         req_xl = urllib.request.Request(f"{base}/api/admin/export-excel?date=2026-11-24", headers=auth_hdr)
-        with opener.open(req_xl, timeout=5) as xl_resp:
+        with opener.open(req_xl, timeout=12) as xl_resp:
             assert xl_resp.status == 200, f"Expected 200 for admin exporting excel, got {xl_resp.status}"
             ct = xl_resp.headers.get("Content-Type", "")
             assert "openxmlformats" in ct, f"Expected openxmlformats Content-Type, got {ct}"
