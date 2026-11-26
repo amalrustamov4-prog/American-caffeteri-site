@@ -57,6 +57,15 @@ const PROMO_CODES = {
   BLEST10: 0.10,
 };
 
+function getTashkentShiftDate() {
+  const tashkentMs = Date.now() + 5 * 3600 * 1000;
+  const d = new Date(tashkentMs);
+  if (d.getUTCHours() < 5) {
+    return new Date(tashkentMs - 24 * 3600 * 1000).toISOString().slice(0, 10);
+  }
+  return d.toISOString().slice(0, 10);
+}
+
 let catalogPrices = {};
 try {
   const menuJsPath = path.join(ROOT_DIR, 'menu_data.js');
@@ -68,6 +77,15 @@ try {
       for (const item of parsed) {
         if (item.id && item.price) {
           catalogPrices[item.id] = Number(item.price);
+        }
+        if (item.id && Array.isArray(item.sizes)) {
+          item.sizes.forEach((sz, idx) => {
+            const sp = Number(sz.price || item.price || 0);
+            if (sp > 0) {
+              catalogPrices[`${item.id}_${sz.key}`] = sp;
+              catalogPrices[`${item.id}_${idx}`] = sp;
+            }
+          });
         }
       }
     }
@@ -196,14 +214,29 @@ const server = http.createServer(async (req, res) => {
   if (relativePath === 'admin') relativePath = 'admin.html';
 
   const relLower = relativePath.toLowerCase();
+  const blockedExactFiles = new Set([
+    'local_preview.js',
+    'dockerfile',
+    'docker-compose.yml',
+    'package.json',
+    'package-lock.json',
+    'vercel.json',
+    'capacitor.config.json',
+    'sync_web.py',
+    'make_export_zips.py',
+  ]);
   const isBlockedStatic =
+    blockedExactFiles.has(relLower) ||
     relLower.startsWith('.') ||
     relLower.includes('/.') ||
     relLower.startsWith('telegram_bot/') ||
     relLower.startsWith('android/') ||
+    relLower.startsWith('ios/') ||
+    relLower.startsWith('deploy/') ||
     relLower.startsWith('tests/') ||
     relLower.startsWith('api/') ||
-    /\.(env|py|pyc|db|db-wal|db-shm|bat|sh|md|apk|log)$/i.test(relLower);
+    relLower.startsWith('node_modules/') ||
+    /\.(env|py|pyc|db|db-wal|db-shm|bat|sh|md|apk|aab|ipa|jks|keystore|yml|yaml|log)$/i.test(relLower);
 
   if (isBlockedStatic) {
     res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -314,7 +347,7 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       user = String(body.username || 'admin').trim();
       const pass = String(body.password || '').trim();
       const expectedPass = process.env.ADMIN_PASSWORD || 'admin123!';
-      if (!pass || (pass !== expectedPass && pass !== 'admin123!' && pass !== 'admin')) {
+      if (!pass || pass !== expectedPass) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: false, error: 'Parol xato / Неверный пароль' }));
         return;
@@ -373,7 +406,13 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
         try {
           const child_process = require('child_process');
           fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-          child_process.execFileSync('python', ['-c', `import sqlite3; conn=sqlite3.connect(r'${dbPath}'); conn.execute('CREATE TABLE IF NOT EXISTS _init(id INT);'); conn.close();`]);
+          let pyBin = 'python3';
+          try {
+            child_process.execFileSync(pyBin, ['--version'], { stdio: 'ignore' });
+          } catch (_) {
+            pyBin = 'python';
+          }
+          child_process.execFileSync(pyBin, ['-c', 'import sqlite3, sys; conn=sqlite3.connect(sys.argv[1]); conn.execute("CREATE TABLE IF NOT EXISTS _init(id INT);"); conn.close()', dbPath]);
         } catch (_) {}
       }
       if (fs.existsSync(dbPath)) {
@@ -426,7 +465,7 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       }
       targetShift = rawDate;
     } else {
-      targetShift = new Date().toISOString().slice(0, 10);
+      targetShift = getTashkentShiftDate();
     }
     try {
       const child_process = require('child_process');
@@ -502,7 +541,7 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
           res.end(JSON.stringify({ ok: false, error: "Yopilgan yoki bekor qilingan buyurtmaga taom qo'shib bo'lmaydi" }));
           return;
         }
-        const newItems = Array.isArray(body.items) ? body.items : [];
+        const newItems = sanitizeItems(body.items);
         target.items = [...target.items, ...newItems];
         target.subtotal = target.items.reduce((s, it) => s + Number(it.price || 0) * Number(it.qty || 1), 0);
         const disc = Number(target.discount || 0);
@@ -769,14 +808,14 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
         res.end(JSON.stringify({ ok: false, error: "Kuryer faqat yetkazib berish (delivery) buyurtmalarini boshqara oladi." }));
         return;
       }
-      if (newStatus && ['cancelled', 'new', 'cooking'].includes(newStatus)) {
+      if (newStatus === 'cancelled' || body.cancel_reason || body.kitchen_status) {
         res.writeHead(403, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: false, error: "Kuryer buyurtmani bekor qila olmaydi yoki oshxonaga qaytara olmaydi." }));
+        res.end(JSON.stringify({ ok: false, error: "Kuryer buyurtmani bekor qila olmaydi yoki oshxona holatini o'zgartira olmaydi." }));
         return;
       }
-      if (body.cancel_reason) {
+      if (newStatus && !['delivering', 'completed'].includes(newStatus)) {
         res.writeHead(403, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: false, error: "Kuryer buyurtmani bekor qila olmaydi." }));
+        res.end(JSON.stringify({ ok: false, error: "Kuryer faqat 'delivering' yoki 'completed' holatini o'rnata oladi." }));
         return;
       }
     } else if (authRole === 'waiter') {
@@ -797,9 +836,9 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       res.end(JSON.stringify({ ok: false, error: "Faqat boshqaruvchi (admin) va kassir buyurtmani bekor qila oladi." }));
       return;
     }
-    if (newPaySt === 'paid' && !['admin', 'owner', 'cashier'].includes(authRole)) {
+    if ((newPaySt === 'paid' || body.courier_paid_upfront) && !['admin', 'owner', 'cashier', 'courier'].includes(authRole)) {
       res.writeHead(403, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: false, error: "Faqat boshqaruvchi va kassir to'lovni tasdiqlashi mumkin." }));
+      res.end(JSON.stringify({ ok: false, error: "Faqat boshqaruvchi, kassir yoki kuryer to'lovni tasdiqlashi mumkin." }));
       return;
     }
 
@@ -839,7 +878,7 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       table_name: body.table_name || body.table || 'VIP 1 Oila',
       hall: body.hall || 'VIP Xona',
       guests: Number(body.guests || 4),
-      res_date: body.res_date || body.date || new Date().toISOString().slice(0, 10),
+      res_date: body.res_date || body.date || getTashkentShiftDate(),
       res_time: body.res_time || body.time || '19:00',
       comment: body.comment || '',
       status: 'new',
@@ -937,7 +976,7 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
       return;
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, operations: mockCashOps, shift_date: new Date().toISOString().slice(0, 10) }));
+    res.end(JSON.stringify({ ok: true, operations: mockCashOps, shift_date: getTashkentShiftDate() }));
     return;
   }
 
@@ -954,7 +993,7 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
     }
     const op = {
       id: mockCashOps.length + 1,
-      shift_date: new Date().toISOString().slice(0, 10),
+      shift_date: getTashkentShiftDate(),
       op_type: String(body.type || body.op_type || 'cash_in'),
       amount: Number(body.amount || 0),
       reason: String(body.reason || ''),
@@ -1049,7 +1088,7 @@ function handleStandaloneApi(pathname, req, res, rawBody) {
     res.end(
       JSON.stringify({
         ok: true,
-        today: new Date().toISOString().slice(0, 10),
+        today: getTashkentShiftDate(),
         orders_count: mockOrders.length,
         valid_orders: validCount,
         total_revenue: totalRev,

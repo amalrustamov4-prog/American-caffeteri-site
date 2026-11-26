@@ -42,11 +42,64 @@ export default async function handler(req, res) {
     const lng = String(payload.lng || '').trim().slice(0, 30);
     const source = String(payload.source || 'web_vercel').trim().slice(0, 30);
 
-    if (firstName.length < 2 || phone.length < 7) {
+    const digitsOnly = phone.replace(/\D/g, '');
+    if (firstName.length < 2 || digitsOnly.length < 7) {
       return res.status(400).json({ ok: false, error: 'Iltimos, ism va telefon raqamingizni kiriting / Укажите имя и телефон.' });
     }
 
+    const posBackendUrl = (process.env.POS_BACKEND_URL || '').trim().replace(/\/+$/, '');
+    if (posBackendUrl) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        const proxyRes = await fetch(`${posBackendUrl}/api/register`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Forwarded-For': req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '',
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        if (proxyRes.ok) {
+          const proxyData = await proxyRes.json();
+          return res.status(200).json(proxyData);
+        }
+        if (proxyRes.status >= 400 && proxyRes.status < 500) {
+          const errData = await proxyRes.json().catch(() => ({ ok: false, error: "Ro'yxatdan o'tish ma'lumotlari noto'g'ri" }));
+          return res.status(proxyRes.status).json(errData);
+        }
+      } catch (proxyErr) {
+        console.warn('POS_BACKEND_URL unreachable for register, falling back to direct Telegram notification:', proxyErr.message);
+      }
+    }
+
     const fullName = `${firstName} ${lastName}`.trim();
+    const posBackendUrl = (process.env.POS_BACKEND_URL || '').trim().replace(/\/+$/, '');
+    if (posBackendUrl) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        const proxyRes = await fetch(`${posBackendUrl}/api/register`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Forwarded-For': req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '',
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        if (proxyRes.ok) {
+          const proxyData = await proxyRes.json();
+          return res.status(200).json(proxyData);
+        }
+      } catch (proxyErr) {
+        console.warn('POS_BACKEND_URL unreachable, falling back to direct Telegram notification:', proxyErr.message);
+      }
+    }
+
     const botToken = (process.env.BOT_TOKEN || '9019814630:AAG7-0N0tbjiuWINPaiVJLNCYJhly9I_gyg').trim();
     const groupId = (process.env.GROUP_CHAT_ID || '-1004439148911').trim();
 

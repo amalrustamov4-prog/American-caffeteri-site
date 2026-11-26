@@ -126,7 +126,11 @@ export default async function handler(req, res) {
         clearTimeout(timeoutId);
         if (proxyRes.ok) {
           const proxyData = await proxyRes.json();
-          return res.status(201).json(proxyData);
+          return res.status(proxyRes.status || 201).json(proxyData);
+        }
+        if (proxyRes.status >= 400 && proxyRes.status < 500) {
+          const errData = await proxyRes.json().catch(() => ({ ok: false, error: "Buyurtma ma'lumotlarida xatolik" }));
+          return res.status(proxyRes.status).json(errData);
         }
       } catch (proxyErr) {
         console.warn('POS_BACKEND_URL unreachable, falling back to direct Telegram notification:', proxyErr.message);

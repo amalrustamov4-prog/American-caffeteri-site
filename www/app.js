@@ -9,10 +9,29 @@ try {
   localStorage.removeItem("american_cfg_group_id");
 } catch (_) {}
 
-// American Caffetteria App Logic (Original Website Design + All 68 Instagram Menu Dishes & Enhanced Photos)
+// American Caffetteria App Logic (Original Website Design + All 77 Menu Dishes & Enhanced Photos)
 (function() {
   const menuCategories = window.menuCategories || [];
   const menuItems = window.menuItems || [];
+
+  function escapeHtml(str) {
+    if (!str && str !== 0) return "";
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function getCapacitorPlatform() {
+    try {
+      if (window.Capacitor && typeof window.Capacitor.getPlatform === "function") {
+        return window.Capacitor.getPlatform();
+      }
+    } catch (_) {}
+    return "web";
+  }
 
   const i18n = {
     ru: {
@@ -671,7 +690,8 @@ try {
     const isCapacitorNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
     if (isCapacitorNative) {
       document.body.classList.add('env-capacitor', 'env-mobile');
-      if (badge) badge.innerHTML = '<i class="ti ti-device-mobile"></i> Native App (Android)';
+      const capPlat = getCapacitorPlatform();
+      if (badge) badge.innerHTML = `<i class="ti ti-device-mobile"></i> Native App (${capPlat === 'ios' ? 'iOS' : 'Android'})`;
       return; // Skip other detection for native app
     }
 
@@ -1007,6 +1027,8 @@ try {
           `🕒 Время: ${userProfile.registeredAt}`;
 
                 // Отправка регистрации на сервер /api/register (в базу данных и Telegram-группу напрямую)
+        const capPlat = getCapacitorPlatform();
+        const isNativeApp = Boolean(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) || capPlat === "ios" || capPlat === "android";
         const regPayload = {
           firstName: userProfile.firstName,
           lastName: userProfile.lastName,
@@ -1015,7 +1037,7 @@ try {
           location: userProfile.location,
           lat: userProfile.lat,
           lng: userProfile.lng,
-          source: (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) ? "tg_miniapp" : (window.Capacitor ? "android_app" : "web"),
+          source: (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData) ? "tg_miniapp" : (isNativeApp ? (capPlat === "ios" ? "ios_app" : "android_app") : "web"),
           user_id: (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initDataUnsafe && window.Telegram.WebApp.initDataUnsafe.user) ? window.Telegram.WebApp.initDataUnsafe.user.id : null
         };
 
@@ -2246,6 +2268,8 @@ try {
 
     const subtotalVal = calculateSubtotal();
     const discountVal = window.activePromoRate > 0 ? Math.round(subtotalVal * window.activePromoRate) : 0;
+    const capPlat = getCapacitorPlatform();
+    const isNativeApp = Boolean(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) || capPlat === "ios" || capPlat === "android";
     const orderPayload = {
       idempotency_key: currentCheckoutIdempotencyKey,
       customer_name: customerName,
@@ -2257,7 +2281,7 @@ try {
       payment_status: (currentDeliveryType === "dine_in" && paymentMethod === "unpaid") ? "pending" : (paymentMethod === "online" ? "awaiting_confirmation" : "pending"),
       promo_code: window.activePromoCode || "",
       discount: discountVal,
-      source: isTgMiniApp ? "tg_miniapp" : (window.Capacitor ? "android_app" : "web"),
+      source: isTgMiniApp ? "tg_miniapp" : (isNativeApp ? (capPlat === "ios" ? "ios_app" : "android_app") : "web"),
       user_id: tgUserId,
       append_if_active: currentDeliveryType === "dine_in",
       items: cart.map((cartItem) => {
@@ -2301,13 +2325,20 @@ try {
       }
 
       window.clearCart();
+      window.activePromoCode = "";
+      window.activePromoRate = 0;
+      const promoInp = document.getElementById("promo-code-input");
+      if (promoInp) promoInp.value = "";
+      const promoMsg = document.getElementById("promo-status-msg");
+      if (promoMsg) { promoMsg.textContent = ""; promoMsg.classList.add("hidden"); }
 
       if (isTgMiniApp && typeof window.Telegram.WebApp.sendData === "function") {
         try {
           window.Telegram.WebApp.sendData(
             JSON.stringify({
               already_saved_via_http: true,
-              order_id: savedOrder.id,
+              order_id: savedOrder.order_code || (savedOrder.id ? `#AC-${1000 + Number(savedOrder.id)}` : ''),
+              order_code: savedOrder.order_code || (savedOrder.id ? `#AC-${1000 + Number(savedOrder.id)}` : ''),
               total: savedOrder.total,
             })
           );
@@ -2343,17 +2374,21 @@ try {
         : (savedOrder.delivery_type === "dine_in" ? "🏛️ В зале" : "🏃 Самовывоз");
 
       let payLabel = "💵 Наличные";
-      if (savedOrder.payment_method === "card") payLabel = "💳 Карта / Терминал";
+      if (savedOrder.payment_method === "card_terminal") payLabel = "💳 Терминал у курьера";
+      else if (savedOrder.payment_method === "card") payLabel = "💳 Карта / Терминал";
       else if (savedOrder.payment_method === "online") payLabel = "📱 Click / Payme (Онлайн)";
       else if (savedOrder.payment_method === "unpaid" || savedOrder.delivery_type === "dine_in") {
         payLabel = "☕ При выходе из кафе (В кассе)";
       }
 
-      const receiptText = `🧾 ЧЕК ЗАКАЗА #${savedOrder.id}
+      const ordCode = savedOrder.order_code || `#AC-${1000 + Number(savedOrder.id)}`;
+      const discLine = Number(savedOrder.discount || 0) > 0 ? `\n🎁 Скидка${savedOrder.promo_code ? ` (${savedOrder.promo_code})` : ""}: -${Number(savedOrder.discount).toLocaleString("ru-RU")} ${cur}` : "";
+      const svcLine = Number(savedOrder.service_fee || 0) > 0 ? `\n🍽 Обслуживание (10%): +${Number(savedOrder.service_fee).toLocaleString("ru-RU")} ${cur}` : "";
+      const receiptText = `🧾 ЧЕК ЗАКАЗА ${ordCode}
 ---------------------------------
 ${itemsListText}
 ---------------------------------
-Сумма блюд: ${savedOrder.subtotal.toLocaleString("ru-RU")} ${cur}
+Сумма блюд: ${savedOrder.subtotal.toLocaleString("ru-RU")} ${cur}${discLine}${svcLine}
 Способ: ${deliveryLabel}
 ${deliveryText}Оплата: ${payLabel}
 ИТОГО К ОПЛАТЕ: ${savedOrder.total.toLocaleString("ru-RU")} ${cur}
@@ -2502,8 +2537,8 @@ ${savedOrder.comment ? `💬 Комментарий: ${savedOrder.comment}\n` : 
         const steps = [
           { key: 'new', label: 'Qabul qilindi' },
           { key: 'cooking', label: 'Oshxonada' },
-          { key: 'delivering', label: 'Kuryerda' },
-          { key: 'completed', label: 'Yetkazildi' }
+          { key: 'delivering', label: o.delivery_type === 'delivery' ? 'Kuryerda' : 'Tayyor' },
+          { key: 'completed', label: o.delivery_type === 'dine_in' ? 'Topshirildi' : (o.delivery_type === 'pickup' ? 'Olib ketildi' : 'Yetkazildi') }
         ];
 
         let activeIdx = 0;
@@ -2523,16 +2558,16 @@ ${savedOrder.comment ? `💬 Комментарий: ${savedOrder.comment}\n` : 
           <div class="p-4 rounded-xl border border-[#232424]/20 bg-white shadow-sm space-y-3">
             <div class="flex justify-between items-start gap-2">
               <div>
-                <span class="f-d font-bold text-[18px] text-[#232424]">${code}</span>
-                <span class="block text-[11px] text-[#232424]/60">${dateStr}</span>
+                <span class="f-d font-bold text-[18px] text-[#232424]">${escapeHtml(code)}</span>
+                <span class="block text-[11px] text-[#232424]/60">${escapeHtml(dateStr)}</span>
               </div>
               <div class="text-right">
-                <span class="f-d font-bold text-[18px] text-[#EB2A2A]">${totalFmt}</span>
+                <span class="f-d font-bold text-[18px] text-[#EB2A2A]">${escapeHtml(totalFmt)}</span>
                 <span class="block text-[11px] uppercase font-bold text-[#232424]/70">${o.delivery_type === 'dine_in' ? 'Zalda' : (o.delivery_type === 'pickup' ? 'Olib ketish' : 'Dostavka')}</span>
               </div>
             </div>
 
-            ${itemsSummary ? `<p class="text-[12.5px] text-[#232424]/80 italic line-clamp-2">📦 ${itemsSummary}</p>` : ''}
+            ${itemsSummary ? `<p class="text-[12.5px] text-[#232424]/80 italic line-clamp-2">📦 ${escapeHtml(itemsSummary)}</p>` : ''}
 
             ${isCancelled ? `
               <div class="p-2 rounded bg-red-100 text-red-800 text-[12px] font-bold text-center">
@@ -2656,6 +2691,8 @@ ${savedOrder.comment ? `💬 Комментарий: ${savedOrder.comment}\n` : 
         closeDishModal();
         closeReceiptModal();
         closeCartDrawer();
+        document.querySelectorAll('.modal-overlay.open').forEach((m) => m.classList.remove('open'));
+        document.body.style.overflow = '';
       }
     });
   }
@@ -2906,10 +2943,11 @@ ${savedOrder.comment ? `💬 Комментарий: ${savedOrder.comment}\n` : 
     banner.id = 'qr-table-banner';
     banner.className = 'w-full bg-[#166534] text-white px-4 py-2.5 text-center text-[13px] font-bold shadow-md sticky top-0 z-[60] flex items-center justify-between transition-all';
     const isUz = (typeof currentLang !== 'undefined' && currentLang === 'uz');
+    const safeTableName = escapeHtml(tableName);
     banner.innerHTML = `
       <div class="flex items-center gap-2 mx-auto">
         <span class="text-base">🪑</span>
-        <span>${isUz ? `Siz <strong>${tableName}</strong>dasiz (Zalda xizmat). Buyurtma oshxona va kassaga tushadi.` : `Вы за столом: <strong>${tableName}</strong> (В зале). Заказ поступит прямо на кухню.`}</span>
+        <span>${isUz ? `Siz <strong>${safeTableName}</strong>dasiz (Zalda xizmat). Buyurtma oshxona va kassaga tushadi.` : `Вы за столом: <strong>${safeTableName}</strong> (В зале). Заказ поступит прямо на кухню.`}</span>
       </div>
       <button type="button" class="text-white/80 hover:text-white text-xl font-bold ml-2 leading-none cursor-pointer" onclick="document.getElementById('qr-table-banner')?.remove()">&times;</button>
     `;

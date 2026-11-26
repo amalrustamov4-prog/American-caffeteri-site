@@ -150,9 +150,15 @@
       }
     }
 
+    let activeSseSource = null;
+
     function courierLogout() {
       if (confirm("Kuryer rejimidan chiqmoqchimisiz?")) {
         localStorage.removeItem("ac_admin_token");
+        if (activeSseSource) {
+          try { activeSseSource.close(); } catch (_) {}
+          activeSseSource = null;
+        }
         currentPin = "";
         updatePinDots();
         checkAuth();
@@ -207,6 +213,7 @@
           localStorage.setItem("ac_admin_token", data.token);
           checkAuth();
           fetchCourierOrders();
+          initSSE();
         } else {
           errMsg.textContent = data.error || "PIN-kod noto'g'ri!";
           currentPin = "";
@@ -388,19 +395,26 @@
       }
     }
 
-    // Connect SSE with auto-reconnect
+    // Connect SSE with auto-reconnect (authenticated)
     function initSSE() {
+      const token = localStorage.getItem("ac_admin_token") || "";
+      if (!token) return;
+      if (activeSseSource) {
+        try { activeSseSource.close(); } catch (_) {}
+        activeSseSource = null;
+      }
       try {
-        const sse = new EventSource(`${API_BASE}/api/stream`);
-        sse.addEventListener("new_order", () => fetchCourierOrders());
-        sse.addEventListener("order_updated", () => fetchCourierOrders());
+        activeSseSource = new EventSource(`${API_BASE}/api/admin/stream?token=${encodeURIComponent(token)}`);
+        activeSseSource.addEventListener("new_order", () => fetchCourierOrders());
+        activeSseSource.addEventListener("order_updated", () => fetchCourierOrders());
       } catch (_) {}
     }
 
-    checkAuth();
-    fetchCourierOrders();
-    initSSE();
-    setInterval(fetchCourierOrders, 4000);
+    if (checkAuth()) {
+      fetchCourierOrders();
+      initSSE();
+    }
+    setInterval(fetchCourierOrders, 5000);
   </script>
 </body>
 </html>

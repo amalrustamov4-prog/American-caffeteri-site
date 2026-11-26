@@ -735,6 +735,12 @@ def append_items_to_order_transactional(order_id: int, new_items: List[Dict[str,
             # Yangi taom qo'shilgach, oshxona statusi yangilanadi (cooking)
             new_status = "cooking" if row["status"] not in ("completed", "cancelled") else row["status"]
             new_kitchen_status = "cooking"
+            row_pay_st = str(row["payment_status"] if "payment_status" in row_keys else "pending").lower()
+            row_deliv_mode = str(row["delivery_mode"] if "delivery_mode" in row_keys else "internal").lower()
+            # Agar ilgari onlayn/oldindan to'langan ochiq zakazga yana taom qo'shilsa, qayta to'lanadigan holatga o'tkaziladi
+            new_pay_st = row_pay_st
+            if row_pay_st == "paid" and row["status"] not in ("completed", "cancelled") and row_deliv_mode != "external_buyout":
+                new_pay_st = "pending"
 
             conn.execute(
                 """
@@ -748,10 +754,11 @@ def append_items_to_order_transactional(order_id: int, new_items: List[Dict[str,
                     comment = ?,
                     status = ?,
                     kitchen_status = ?,
+                    payment_status = ?,
                     updated_at_utc = ?
                 WHERE id = ?
                 """,
-                (summary_text, items_json, new_subtotal, new_service_fee, new_total, new_total, updated_comment, new_status, new_kitchen_status, now_utc, order_id),
+                (summary_text, items_json, new_subtotal, new_service_fee, new_total, new_total, updated_comment, new_status, new_kitchen_status, new_pay_st, now_utc, order_id),
             )
             updated_row = conn.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
             conn.commit()
@@ -1142,9 +1149,10 @@ def check_csrf_protection(request: web.Request) -> bool:
             return True
     return False
 
-BLOCKED_PATH_PREFIXES = ("/.", "/telegram_bot", "/android", "/tests", "/node_modules")
+BLOCKED_PATH_PREFIXES = ("/.", "/telegram_bot", "/android", "/ios", "/deploy", "/tests", "/node_modules")
 BLOCKED_EXTENSIONS = (
-    ".env", ".py", ".pyc", ".db", ".db-wal", ".db-shm", ".bat", ".sh", ".md", ".apk", ".log", ".yml", ".yaml"
+    ".env", ".py", ".pyc", ".db", ".db-wal", ".db-shm", ".bat", ".sh", ".md",
+    ".apk", ".aab", ".ipa", ".jks", ".keystore", ".plist", ".pbxproj", ".log", ".yml", ".yaml"
 )
 BLOCKED_EXACT_PATHS = {
     "/local_preview.js",
@@ -1440,6 +1448,9 @@ async def api_order_pay(request: web.Request) -> web.Response:
     except ValueError as ve:
         return web.json_response({"ok": False, "error": str(ve)}, status=400)
 
+    if updated_order.get("already_paid"):
+        return web.json_response({"ok": True, "order": updated_order, "already_paid": True})
+
     await broadcast_sse_event("order_updated", {"order": updated_order})
 
     bot_instance = request.app.get("bot")
@@ -1648,8 +1659,13 @@ async def api_admin_list_orders(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "error": "Требуется авторизация."}, status=401)
     status_filter = request.query.get("status", "all").strip().lower()
     date_filter = request.query.get("date", "").strip()
+    if date_filter and not re.match(r"^\d{4}-\d{2}-\d{2}$", date_filter):
+        return web.json_response({"ok": False, "error": "Noto'g'ri sana formati (YYYY-MM-DD kutiladi)"}, status=400)
     search_q = request.query.get("q", "").strip().lower()
-    limit = min(int(request.query.get("limit", "300")), 1000)
+    try:
+        limit = max(1, min(int(request.query.get("limit", "300")), 1000))
+    except (ValueError, TypeError):
+        limit = 300
     with get_db_connection() as conn:
         rows = conn.execute(
             "SELECT * FROM orders ORDER BY id DESC LIMIT ?",
@@ -1667,10 +1683,11 @@ async def api_admin_list_orders(request: web.Request) -> web.Response:
             elif o["status"] != status_filter:
                 continue
         if date_filter:
-            if not (o["created_at_utc"] or "").startswith(date_filter):
+            order_shift = get_order_shift_date(o.get("created_at_utc") or o.get("created_at") or "")
+            if order_shift != date_filter:
                 continue
         if search_q:
-            haystack = f"#{o['id']} {o['customer_name']} {o['phone']} {o['address']}".lower()
+            haystack = f"#{o['id']} {o.get('order_code') or ''} {o['customer_name']} {o['phone']} {o['address']}".lower()
             if search_q not in haystack:
                 continue
         filtered.append(o)
@@ -1944,7 +1961,10 @@ async def api_admin_stats(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "error": "Avtorizatsiya talab qilinadi / Требуется авторизация."}, status=401)
     if role not in ("admin", "owner", "cashier"):
         return web.json_response({"ok": False, "error": "Faqat boshqaruvchi va kassir hisobotlarni ko'ra oladi."}, status=403)
-    target_shift = request.query.get("date") or get_tashkent_shift_date()
+    raw_date = (request.query.get("date") or "").strip()
+    if raw_date and not re.match(r"^\d{4}-\d{2}-\d{2}$", raw_date):
+        return web.json_response({"ok": False, "error": "Noto'g'ri sana formati (YYYY-MM-DD kutiladi)"}, status=400)
+    target_shift = raw_date or get_tashkent_shift_date()
     with get_db_connection() as conn:
         rows = conn.execute("SELECT * FROM orders ORDER BY id DESC").fetchall()
         cash_ops = conn.execute(
@@ -2057,8 +2077,8 @@ def generate_excel_report_bytes(target_shift: str, operator_name: str) -> bytes:
     cash_ops = [dict(r) for r in cash_ops_rows]
     reservations = [dict(r) for r in reservations_rows]
 
-    # Shift calculations
-    shift_orders = [o for o in all_orders if (o.get("created_at_utc") or "").startswith(target_shift)]
+    # Shift calculations (Tashkent UTC+5 smena 05:00-05:00 bilan mos)
+    shift_orders = [o for o in all_orders if get_order_shift_date(o.get("created_at_utc") or o.get("created_at") or "") == target_shift]
     valid_orders = [o for o in shift_orders if o.get("status") != "cancelled" and str(o.get("payment_status", "")).lower() == "paid"]
     cancelled_orders = [o for o in shift_orders if o.get("status") == "cancelled"]
 
@@ -2444,11 +2464,15 @@ async def api_create_reservation(request: web.Request) -> web.Response:
     phone = str(body.get("phone") or "").strip()
     table_name = str(body.get("table_name") or body.get("table") or "1-Stol").strip()
     hall = str(body.get("hall") or "Asosiy Zal").strip()
-    guests = int(body.get("guests") or 2)
-    res_date = str(body.get("res_date") or body.get("date") or datetime.now(timezone(timedelta(hours=5))).strftime("%Y-%m-%d")).strip()
-    res_time = str(body.get("res_time") or body.get("time") or "19:00").strip()
-    comment = str(body.get("comment") or "").strip()
-    if len(customer_name) < 2 or len(phone) < 7:
+    try:
+        guests = max(1, min(int(body.get("guests") or 2), 100))
+    except (ValueError, TypeError):
+        guests = 2
+    res_date = str(body.get("res_date") or body.get("date") or datetime.now(timezone(timedelta(hours=5))).strftime("%Y-%m-%d")).strip()[:20]
+    res_time = str(body.get("res_time") or body.get("time") or "19:00").strip()[:20]
+    comment = str(body.get("comment") or "").strip()[:300]
+    phone_digits = re.sub(r"\D", "", phone)
+    if len(customer_name) < 2 or len(phone_digits) < 7:
         return web.json_response({"ok": False, "error": "Ism va telefon raqamni kiriting."}, status=400)
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     with get_db_connection() as conn:
@@ -2566,7 +2590,10 @@ async def api_admin_get_cash_operations(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "error": "Avtorizatsiya talab qilinadi"}, status=401)
     if role not in ("admin", "owner", "cashier"):
         return web.json_response({"ok": False, "error": "Faqat boshqaruvchi va kassir ruxsatga ega."}, status=403)
-    shift_date = request.query.get("date") or get_tashkent_shift_date()
+    raw_shift_date = (request.query.get("date") or "").strip()
+    if raw_shift_date and not re.match(r"^\d{4}-\d{2}-\d{2}$", raw_shift_date):
+        return web.json_response({"ok": False, "error": "Noto'g'ri sana formati (YYYY-MM-DD kutiladi)"}, status=400)
+    shift_date = raw_shift_date or get_tashkent_shift_date()
     with get_db_connection() as conn:
         rows = conn.execute(
             "SELECT * FROM cash_operations WHERE shift_date = ? ORDER BY id DESC",
@@ -3025,10 +3052,12 @@ async def handle_webapp_data(message: types.Message, bot: Bot):
             "items": [{"id": "custom", "name": "Telegram Mini App buyurtmasi", "qty": 1, "price": 1000}],
         }
 
-    if parsed.get("already_saved_via_http") and parsed.get("order_id"):
-        safe_id = html.escape(str(parsed.get("order_id")))
+    if parsed.get("already_saved_via_http") and (parsed.get("order_code") or parsed.get("order_id")):
+        raw_code = str(parsed.get("order_code") or parsed.get("order_id"))
+        display_code = raw_code if raw_code.startswith("#") else f"#{raw_code}"
+        safe_code = html.escape(display_code)
         await message.answer(
-            f"✅ Sizning buyurtmangiz <b>#{safe_id}</b> qabul qilindi va oshxonaga yuborildi!",
+            f"✅ Sizning buyurtmangiz <b>{safe_code}</b> qabul qilindi va oshxonaga yuborildi!",
             parse_mode="HTML",
         )
         return
@@ -3042,8 +3071,9 @@ async def handle_webapp_data(message: types.Message, bot: Bot):
             await send_telegram_group_notification(bot, saved_order)
 
         tot_formatted = f"{saved_order['total']:,}".replace(",", " ")
+        ord_code = html.escape(str(saved_order.get("order_code") or f"#AC-{1000 + int(saved_order['id'])}"))
         msg = (
-            f"✅ Sizning buyurtmangiz <b>#{saved_order['id']}</b> qabul qilindi!\n"
+            f"✅ Sizning buyurtmangiz <b>{ord_code}</b> qabul qilindi!\n"
             f"💰 To'lov summasi: <b>{tot_formatted} so'm</b>"
         )
         await message.answer(msg, parse_mode="HTML")

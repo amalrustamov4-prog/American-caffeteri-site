@@ -374,8 +374,34 @@ def main():
                     assert f"xl/worksheets/sheet{i}.xml" in names, f"Missing xl/worksheets/sheet{i}.xml"
         print("22-23. GET /api/admin/export-excel (RBAC 403 for courier, injection 400, 200 & valid 6-sheet .xlsx for admin) -> SUCCESS")
 
+        # 24. Courier delivery completion & payment marking (200 OK)
+        st_deliv_ord, d_deliv_ord = req_json(
+            f"{base}/api/orders",
+            "POST",
+            {
+                "customer_name": "Courier Pay Test",
+                "phone": "+998909998877",
+                "delivery_type": "delivery",
+                "address": "Amir Temur shoh ko'chasi, 12",
+                "payment_method": "cash",
+                "items": [{"id": "burger_gamburger", "name": "Gamburger", "price": 35000, "qty": 1}],
+            },
+        )
+        assert st_deliv_ord in (200, 201) and d_deliv_ord.get("ok"), f"Create delivery order failed: {d_deliv_ord}"
+        deliv_id = d_deliv_ord["order"]["id"]
+        # Courier marks delivered and paid
+        st_c_finish, d_c_finish = req_json(
+            f"{base}/api/admin/orders/{deliv_id}/status",
+            "PATCH",
+            {"status": "completed", "payment_status": "paid"},
+            courier_hdr,
+        )
+        assert st_c_finish == 200 and d_c_finish.get("ok"), f"Courier marking order completed and paid failed: {st_c_finish} {d_c_finish}"
+        assert d_c_finish["order"]["status"] == "completed" and d_c_finish["order"]["payment_status"] == "paid"
+        print("24. Courier completion & payment status update via PATCH /status (200 OK) -> SUCCESS")
+
         print("\n==========================================")
-        print("  NATIJA: 23/23 PASS (100% SUCCESS)       ")
+        print("  NATIJA: 24/24 PASS (100% SUCCESS)       ")
         print("==========================================\n")
     finally:
         proc.terminate()

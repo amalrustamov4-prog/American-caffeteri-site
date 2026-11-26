@@ -115,7 +115,7 @@ def main():
         ord_id = order["id"]
         assert order["payment_status"] == "pending", f"Security violation: non-admin request forged paid status: {order}"
         assert order["service_fee"] == 3500, f"Expected 3500 service fee for 10% dine-in: {order}"
-        print(f"3. POST /api/orders (#{order.get('order_code')}) -> SUCCESS (Dine-in & Security Clamp)")
+        print(f"3. POST /api/orders ({order.get('order_code')}) -> SUCCESS (Dine-in & Security Clamp)")
 
         # 4. POST /api/orders/:id/append — Price Spoofing Prevention
         # Client tries to inject price: 1 UZS for Coca-Cola 0.5L (real price is 8000 UZS)

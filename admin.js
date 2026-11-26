@@ -18,6 +18,12 @@
     { id: "VIP Xona", name: "VIP Xona", hall: "VIP", seats: 10 },
   ];
 
+  function getTashkentShiftDateClient() {
+    // UTC+5 Tashkent with 05:00 business-day rollover matches backend get_tashkent_shift_date()
+    const tashkentMs = Date.now() + 5 * 3600 * 1000 - 5 * 3600 * 1000;
+    return new Date(tashkentMs).toISOString().slice(0, 10);
+  }
+
   // ==================== STATE ====================
   const state = {
     token: localStorage.getItem("ac_admin_token") || "",
@@ -549,7 +555,7 @@
     // Excel Report Download
     document.getElementById("btn-download-excel-report")?.addEventListener("click", async () => {
       try {
-        const todayStr = state.selectedShiftDate || new Date().toISOString().slice(0, 10);
+        const todayStr = state.selectedShiftDate || getTashkentShiftDateClient();
         const res = await fetch(getAdminApiUrl(`/api/admin/export-excel?date=${todayStr}`), {
           headers: getAuthHeaders(),
         });
@@ -586,7 +592,7 @@
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `cafe_bot_${new Date().toISOString().slice(0, 10)}.db`;
+        a.download = `cafe_bot_${getTashkentShiftDateClient()}.db`;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -1457,6 +1463,7 @@
     const addrInput = document.getElementById("pos-cust-addr");
     const nameInput = document.getElementById("pos-cust-name");
     const delivFeeRow = document.getElementById("pos-deliv-fee-row");
+    const serviceFeeRow = document.getElementById("pos-service-fee-row");
     const tableSelectWrap = document.getElementById("pos-table-select-wrap");
     const kitchenBtn = document.getElementById("pos-kitchen-send-btn");
     const payBtn = document.getElementById("pos-pay-btn");
@@ -1471,6 +1478,7 @@
         if (nameInput.value.includes("Stol")) nameInput.value = "";
       }
       if (delivFeeRow) delivFeeRow.style.display = "flex";
+      if (serviceFeeRow) serviceFeeRow.style.display = "none";
     } else if (state.posOrderType === "pickup") {
       if (addrInput) addrInput.style.display = "none";
       if (tableSelectWrap) tableSelectWrap.style.display = "none";
@@ -1481,6 +1489,7 @@
         if (nameInput.value.includes("Stol")) nameInput.value = "";
       }
       if (delivFeeRow) delivFeeRow.style.display = "none";
+      if (serviceFeeRow) serviceFeeRow.style.display = "none";
     } else {
       if (addrInput) addrInput.style.display = "none";
       if (tableSelectWrap) tableSelectWrap.style.display = "block";
@@ -1492,6 +1501,7 @@
         nameInput.value = tableSelect ? tableSelect.value : "1-Stol";
       }
       if (delivFeeRow) delivFeeRow.style.display = "none";
+      if (serviceFeeRow) serviceFeeRow.style.display = "flex";
       updatePOSTableBanner();
     }
     renderPOSTicket();
@@ -1508,8 +1518,14 @@
     return subtotal > 0 ? 10000 : 0;
   }
 
+  function getPOSServiceFee() {
+    if (state.posOrderType !== "dine_in") return 0;
+    const subtotal = getPOSSubtotal();
+    return subtotal > 0 ? Math.round(subtotal * 0.10) : 0;
+  }
+
   function getPOSTotal() {
-    return getPOSSubtotal() + getPOSDeliveryFee();
+    return getPOSSubtotal() + getPOSDeliveryFee() + getPOSServiceFee();
   }
 
   function getActivePayingTotal() {
@@ -1547,7 +1563,7 @@
       const ordTot = getOrderTotal(activeOrder).toLocaleString("ru-RU");
       banner.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center;">
-          <span>🔴 <b>${selectedTable}</b> band · Buyurtma: <b>${getOrderCode(activeOrder)}</b></span>
+          <span>🔴 <b>${escapeHtml(selectedTable)}</b> band · Buyurtma: <b>${escapeHtml(getOrderCode(activeOrder))}</b></span>
           <span style="font-weight:900;">${ordTot} so'm</span>
         </div>
         <div style="font-size:11px; margin-top:3px; color:#92400e;">
@@ -1584,6 +1600,8 @@
       `;
       document.getElementById("pos-subtotal-val").textContent = "0 so'm";
       document.getElementById("pos-deliv-val").textContent = "0 so'm";
+      const svcZeroEl = document.getElementById("pos-service-val");
+      if (svcZeroEl) svcZeroEl.textContent = "0 so'm";
       document.getElementById("pos-total-val").textContent = "0 so'm";
       document.getElementById("pos-pay-btn").disabled = true;
       const kitchenBtn = document.getElementById("pos-kitchen-send-btn");
@@ -1629,11 +1647,14 @@
 
     const subtotal = getPOSSubtotal();
     const fee = getPOSDeliveryFee();
-    const total = subtotal + fee;
+    const serviceFee = getPOSServiceFee();
+    const total = subtotal + fee + serviceFee;
 
     document.getElementById("pos-subtotal-val").textContent = subtotal.toLocaleString("ru-RU") + " so'm";
     document.getElementById("pos-deliv-val").textContent =
       fee === 0 ? "Bepul (0 so'm)" : fee.toLocaleString("ru-RU") + " so'm";
+    const svcValEl = document.getElementById("pos-service-val");
+    if (svcValEl) svcValEl.textContent = serviceFee.toLocaleString("ru-RU") + " so'm";
     document.getElementById("pos-total-val").textContent = total.toLocaleString("ru-RU") + " so'm";
     document.getElementById("pos-pay-btn").disabled = false;
     const kitchenBtn = document.getElementById("pos-kitchen-send-btn");
@@ -1663,6 +1684,10 @@
 
   // ==================== PAYMENT & RECEIPT PRINT ====================
   function openPaymentModal(targetOrder = null) {
+    if (state.role === "waiter") {
+      alert("Ofitsiant to'lov qabul qila olmaydi. Mijoz to'lovini faqat kassir qabul qilishi mumkin.");
+      return;
+    }
     if (targetOrder) {
       state.payingOrder = targetOrder;
     } else {
@@ -1879,8 +1904,9 @@
           items: paidOrder.items || [],
           subtotal: paidOrder.subtotal || total,
           discount: paidOrder.discount || 0,
+          serviceFee: Number(paidOrder.service_fee || 0),
           delivFee: paidOrder.delivery_fee || 0,
-          total: total,
+          total: Number(paidOrder.total || total),
           payMethod: state.payMethod,
           cashGiven: cashGiven,
           change: change,
@@ -1903,7 +1929,8 @@
       const custAddr = document.getElementById("pos-cust-addr").value.trim();
       const subtotal = getPOSSubtotal();
       const delivFee = getPOSDeliveryFee();
-      const total = subtotal + delivFee;
+      const serviceFee = getPOSServiceFee();
+      const total = subtotal + delivFee + serviceFee;
       const cashGiven = Number(document.getElementById("input-cash-given").value) || total;
       const change = Math.max(0, cashGiven - total);
 
@@ -1929,6 +1956,7 @@
         })),
         totalAmount: total,
         subtotal: subtotal,
+        service_fee: serviceFee,
         delivery_fee: delivFee,
       };
 
@@ -1959,10 +1987,11 @@
         custPhone: custPhone,
         custAddr: custAddr,
         items: cartSnapshot,
-        subtotal: subtotal,
-        discount: 0,
-        delivFee: delivFee,
-        total: total,
+        subtotal: Number(savedOrder.subtotal || subtotal),
+        discount: Number(savedOrder.discount || 0),
+        serviceFee: Number(savedOrder.service_fee ?? serviceFee),
+        delivFee: Number(savedOrder.delivery_fee ?? delivFee),
+        total: Number(savedOrder.total || total),
         payMethod: state.payMethod,
         cashGiven: cashGiven,
         change: change,
@@ -2045,6 +2074,14 @@
             ? `<div style="display:flex; justify-content:space-between;">
                 <span>Chegirma:</span>
                 <span>-${Number(data.discount).toLocaleString("ru-RU")} so'm</span>
+              </div>`
+            : ""
+        }
+        ${
+          data.serviceFee > 0
+            ? `<div style="display:flex; justify-content:space-between;">
+                <span>Xizmat haqi (10%):</span>
+                <span>+${Number(data.serviceFee).toLocaleString("ru-RU")} so'm</span>
               </div>`
             : ""
         }
@@ -2355,11 +2392,12 @@
         : [{ name: ord.items_summary || "Buyurtma", price: tot, qty: 1 }],
       subtotal: ord.subtotal || tot,
       discount: ord.discount || 0,
+      serviceFee: ord.service_fee || 0,
       delivFee: ord.delivery_fee || 0,
       total: tot,
       payMethod: (function() {
         const pm = String(ord.payment_method || "").toLowerCase();
-        if (pm === "card") return "card";
+        if (pm === "card" || pm === "card_terminal") return "card";
         if (pm === "online" || pm === "click" || pm === "payme") return "click";
         const comm = String(ord.comment || "").toLowerCase();
         if (comm.includes("karta") || comm.includes("card") || comm.includes("terminal")) return "card";
@@ -2444,9 +2482,10 @@
 
     const ordTotal = getOrderTotal(ord);
     const subtotal = Number(ord.subtotal || ordTotal);
-    const serviceFee = Number(ord.service_fee || (ord.delivery_type === "dine_in" ? Math.round(subtotal * 0.10) : 0));
     const discount = Number(ord.discount || 0);
-    const grandTotal = Number(ord.total || (subtotal - discount + serviceFee));
+    const afterDiscount = Math.max(0, subtotal - discount);
+    const serviceFee = Number(ord.service_fee !== undefined && ord.service_fee !== null ? ord.service_fee : (ord.delivery_type === "dine_in" ? Math.round(afterDiscount * 0.10) : 0));
+    const grandTotal = Number(ord.total || (afterDiscount + serviceFee));
 
     const items = Array.isArray(ord.items)
       ? ord.items
@@ -3034,9 +3073,9 @@
         card.innerHTML = `
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
             <strong style="font-size:16px;">🪑 ${escapeHtml(tbl.name)}</strong>
-            <span style="color:#ef4444; font-size:12px; font-weight:800;">🔴 Band (${ordCode})</span>
+            <span style="color:#ef4444; font-size:12px; font-weight:800;">🔴 Band (${escapeHtml(ordCode)})</span>
           </div>
-          <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px;">${tbl.hall} · ${tbl.seats} o'rinli</div>
+          <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px;">${escapeHtml(tbl.hall)} · ${tbl.seats} o'rinli</div>
           <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.06); padding:6px 8px; border-radius:6px; margin-bottom:6px;">
             <span style="font-size:12px; font-weight:700;">Jami (${itemCount} taom):</span>
             <strong style="font-size:14px; color:#10b981;">${ordTot.toLocaleString("ru-RU")} so'm</strong>
@@ -3052,9 +3091,14 @@
               🧾 Predchek
             </button>
           </div>
-          <button type="button" class="header-btn btn-settle-table" style="width:100%; justify-content:center; background:#10b981; border-color:#059669; color:#fff; font-weight:800; font-size:13px; padding:8px 4px;">
-            💳 Chiqishda to'lash
-          </button>
+          ${state.role === "waiter"
+            ? `<div style="text-align:center; font-size:12px; font-weight:700; color:#94a3b8; background:rgba(255,255,255,0.05); padding:8px 4px; border-radius:6px; border:1px dashed #475569;">
+                💵 To'lov kassirda qabul qilinadi
+               </div>`
+            : `<button type="button" class="header-btn btn-settle-table" style="width:100%; justify-content:center; background:#10b981; border-color:#059669; color:#fff; font-weight:800; font-size:13px; padding:8px 4px;">
+                💳 Chiqishda to'lash
+               </button>`
+          }
         `;
 
         card.querySelector(".btn-add-food-to-table").addEventListener("click", () => {
@@ -3076,9 +3120,12 @@
           printPrecheck(activeOrder);
         });
 
-        card.querySelector(".btn-settle-table").addEventListener("click", () => {
-          openPaymentModal(activeOrder);
-        });
+        const settleBtn = card.querySelector(".btn-settle-table");
+        if (settleBtn) {
+          settleBtn.addEventListener("click", () => {
+            openPaymentModal(activeOrder);
+          });
+        }
       } else {
         card.className = "table-map-card table-free";
         card.innerHTML = `
