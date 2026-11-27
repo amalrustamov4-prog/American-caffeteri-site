@@ -2768,7 +2768,28 @@ async def handle_order_status_callback(callback: types.CallbackQuery):
         now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         with get_db_connection() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            row = conn.execute("SELECT * FROM orders WHERE id = ?", (int(order_id_str),)).fetchone()
+            order_code = f"#AC-{order_id_str}"
+            row = conn.execute("SELECT * FROM orders WHERE id = ? OR order_code = ?", (int(order_id_str), order_code)).fetchone()
+            if not row:
+                msg_txt = (callback.message.text or callback.message.caption or "") if callback.message else ""
+                cust_match = re.search(r"Mijoz:\s*([^\n]+)", msg_txt)
+                phone_match = re.search(r"Telefon:\s*([^\n]+)", msg_txt)
+                total_match = re.search(r"JAMI TO'LOV:\s*([0-9\s]+)\s*so'm", msg_txt)
+                customer_name = cust_match.group(1).strip() if cust_match else "Mijoz"
+                phone = phone_match.group(1).strip() if phone_match else ""
+                total = int(re.sub(r"\D", "", total_match.group(1))) if total_match else 0
+                
+                ins_sql = """
+                INSERT INTO orders (id, order_code, customer_name, phone, status, kitchen_status, total, subtotal, source, created_at_utc, updated_at_utc)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'telegram_group', ?, ?)
+                """
+                try:
+                    conn.execute(ins_sql, (int(order_id_str), order_code, customer_name, phone, new_status, new_status if new_status in ("cooking", "ready") else "pending", total, total, now_utc, now_utc))
+                    conn.commit()
+                    row = conn.execute("SELECT * FROM orders WHERE id = ?", (int(order_id_str),)).fetchone()
+                except Exception as ins_err:
+                    logger.warning("Auto-inserting order from telegram card error: %s", ins_err)
+
             if not row:
                 conn.rollback()
                 await callback.answer("Zakaz topilmadi", show_alert=True)
