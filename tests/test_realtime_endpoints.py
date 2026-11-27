@@ -400,8 +400,22 @@ def main():
         assert d_c_finish["order"]["status"] == "completed" and d_c_finish["order"]["payment_status"] == "paid"
         print("24. Courier completion & payment status update via PATCH /status (200 OK) -> SUCCESS")
 
+        # 25. Clean routing for /admin and /courier
+        req_adm = urllib.request.Request(f"{base}/admin")
+        with opener.open(req_adm, timeout=5) as resp_adm:
+            assert resp_adm.status == 200, f"Expected 200 for /admin, got {resp_adm.status}"
+            adm_content = resp_adm.read().decode("utf-8")
+            assert "American Caffetteria" in adm_content and "tab-btn-kitchen" in adm_content, "Invalid /admin HTML content"
+
+        req_cour = urllib.request.Request(f"{base}/courier")
+        with opener.open(req_cour, timeout=5) as resp_cour:
+            assert resp_cour.status == 200, f"Expected 200 for /courier, got {resp_cour.status}"
+            cour_content = resp_cour.read().decode("utf-8")
+            assert "Kuryer" in cour_content or "courier" in cour_content.lower(), "Invalid /courier HTML content"
+        print("25. Clean URLs /admin and /courier serve corresponding HTML files -> SUCCESS")
+
         print("\n==========================================")
-        print("  NATIJA: 24/24 PASS (100% SUCCESS)       ")
+        print("  NATIJA: 25/25 PASS (100% SUCCESS)       ")
         print("==========================================\n")
     finally:
         proc.terminate()

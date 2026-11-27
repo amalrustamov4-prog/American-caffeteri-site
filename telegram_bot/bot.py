@@ -2718,6 +2718,11 @@ async def serve_admin(request: web.Request) -> web.FileResponse:
         STATIC_ROOT / "admin.html",
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
     )
+async def serve_courier(request: web.Request) -> web.FileResponse:
+    return web.FileResponse(
+        STATIC_ROOT / "courier.html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
 # =====================================================================
 # TELEGRAM BOT HANDLERS (AIOGRAM)
 # =====================================================================
@@ -3171,6 +3176,8 @@ async def main():
     app.router.add_get("/", serve_index)
     app.router.add_get("/admin", serve_admin)
     app.router.add_get("/admin.html", serve_admin)
+    app.router.add_get("/courier", serve_courier)
+    app.router.add_get("/courier.html", serve_courier)
     app.router.add_static("/", path=str(STATIC_ROOT), show_index=False)
 
     bot_instance: Optional[Bot] = None

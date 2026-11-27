@@ -1842,6 +1842,12 @@ try {
         splashModal.classList.add('hidden');
       });
     }
+
+    if (splashModal) {
+      splashModal.addEventListener('click', (e) => {
+        if (e.target === splashModal) splashModal.classList.add('hidden');
+      });
+    }
   }
 
   function setupCartDrawer() {

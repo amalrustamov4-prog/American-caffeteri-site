@@ -212,6 +212,7 @@ const server = http.createServer(async (req, res) => {
   // Static File Serving with Security Filter
   let relativePath = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
   if (relativePath === 'admin') relativePath = 'admin.html';
+  if (relativePath === 'courier') relativePath = 'courier.html';
 
   const relLower = relativePath.toLowerCase();
   const blockedExactFiles = new Set([
