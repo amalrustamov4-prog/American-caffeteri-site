@@ -241,9 +241,6 @@ export default async function handler(req, res) {
     } else {
       console.warn('BOT_TOKEN or GROUP_CHAT_ID is not configured in process.env, skipping Telegram notification.');
     }
-        console.error('Telegram API notification error:', e);
-      }
-    }
 
     const savedOrder = {
       id: numericId,
