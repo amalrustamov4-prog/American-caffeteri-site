@@ -45,5 +45,9 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Joylashuvingiz yetkazib berish manzilini avtomatik aniqlash uchun ishlatiladi / Геолокация используется для автозаполнения адреса доставки</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>

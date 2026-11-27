@@ -202,8 +202,16 @@ def main():
                     assert f"xl/worksheets/sheet{i}.xml" in names, f"Missing xl/worksheets/sheet{i}.xml"
         print("9. GET /api/admin/export-excel -> SUCCESS (Pure Python 6-sheet OOXML .xlsx valid)")
 
+        # 10. GET /privacy clean URL
+        req_priv = urllib.request.Request(f"{base}/privacy")
+        with opener.open(req_priv, timeout=5) as priv_resp:
+            assert priv_resp.status == 200, f"Expected 200 for /privacy, got {priv_resp.status}"
+            priv_body = priv_resp.read().decode("utf-8")
+            assert "Maxfiylik siyosati" in priv_body or "Политика конфиденциальности" in priv_body, "Invalid /privacy body"
+        print("10. GET /privacy -> SUCCESS (Privacy policy clean URL valid)")
+
         print("\n==============================================================")
-        print("  ALL 9 LIVE bot.py (aiohttp) INTEGRATION TESTS PASSED (100%) ")
+        print("  ALL 10 LIVE bot.py (aiohttp) INTEGRATION TESTS PASSED (100%) ")
         print("==============================================================\n")
     finally:
         proc.terminate()

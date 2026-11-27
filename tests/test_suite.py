@@ -159,8 +159,13 @@ def test_html_and_assets():
     assert courier_file.exists(), "courier.html отсутствует!"
     cour_content = courier_file.read_text(encoding="utf-8")
 
-    # Check iOS PWA / Notch / Dynamic Island meta tags across all 3 HTML files
-    for fname, html_doc in [("index.html", idx_content), ("admin.html", admin_content), ("courier.html", cour_content)]:
+    privacy_file = ROOT / "privacy.html"
+    assert privacy_file.exists(), "privacy.html отсутствует!"
+    priv_content = privacy_file.read_text(encoding="utf-8")
+    assert "Maxfiylik siyosati" in priv_content, "Maxfiylik siyosati отсутствует в privacy.html"
+
+    # Check iOS PWA / Notch / Dynamic Island meta tags across all HTML files
+    for fname, html_doc in [("index.html", idx_content), ("admin.html", admin_content), ("courier.html", cour_content), ("privacy.html", priv_content)]:
         assert "viewport-fit=cover" in html_doc, f"viewport-fit=cover missing in {fname}"
         assert "apple-mobile-web-app-capable" in html_doc, f"apple-mobile-web-app-capable missing in {fname}"
         assert "apple-mobile-web-app-status-bar-style" in html_doc, f"apple-mobile-web-app-status-bar-style missing in {fname}"

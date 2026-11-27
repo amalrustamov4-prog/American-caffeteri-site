@@ -18,6 +18,7 @@ FILES_TO_SYNC = [
     "admin.js",
     "admin.css",
     "courier.html",
+    "privacy.html",
 ]
 
 def sync_targets():

@@ -326,12 +326,6 @@
   function bindEvents() {
     const loginForm = document.getElementById("login-form");
     if (loginForm) {
-      document.getElementById("btn-fill-creds")?.addEventListener("click", () => {
-        const u = document.getElementById("login-username");
-        const p = document.getElementById("login-password");
-        if (u) u.value = "admin";
-        if (p) p.value = "admin123!";
-      });
       loginForm.addEventListener("submit", handleLogin);
     }
 

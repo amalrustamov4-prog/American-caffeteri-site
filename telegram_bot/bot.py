@@ -2723,6 +2723,11 @@ async def serve_courier(request: web.Request) -> web.FileResponse:
         STATIC_ROOT / "courier.html",
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
     )
+async def serve_privacy(request: web.Request) -> web.FileResponse:
+    return web.FileResponse(
+        STATIC_ROOT / "privacy.html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
 # =====================================================================
 # TELEGRAM BOT HANDLERS (AIOGRAM)
 # =====================================================================
@@ -3137,6 +3142,8 @@ async def api_admin_trigger_backup(request: web.Request) -> web.Response:
 # SERVERNI ISHGA TUSHIRISH (AIOHTTP + AIOGRAM)
 # =====================================================================
 async def main():
+    if aiohttp is None:
+        raise RuntimeError("aiohttp is not installed. Run: pip install -r telegram_bot/requirements.txt")
     init_and_migrate_db()
     app = web.Application(middlewares=[cors_and_security_middleware], client_max_size=65536)
 
@@ -3178,6 +3185,8 @@ async def main():
     app.router.add_get("/admin.html", serve_admin)
     app.router.add_get("/courier", serve_courier)
     app.router.add_get("/courier.html", serve_courier)
+    app.router.add_get("/privacy", serve_privacy)
+    app.router.add_get("/privacy.html", serve_privacy)
     app.router.add_static("/", path=str(STATIC_ROOT), show_index=False)
 
     bot_instance: Optional[Bot] = None

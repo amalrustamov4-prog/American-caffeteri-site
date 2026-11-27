@@ -414,8 +414,16 @@ def main():
             assert "Kuryer" in cour_content or "courier" in cour_content.lower(), "Invalid /courier HTML content"
         print("25. Clean URLs /admin and /courier serve corresponding HTML files -> SUCCESS")
 
+        # 26. Clean routing for /privacy
+        req_priv = urllib.request.Request(f"{base}/privacy")
+        with opener.open(req_priv, timeout=5) as resp_priv:
+            assert resp_priv.status == 200, f"Expected 200 for /privacy, got {resp_priv.status}"
+            priv_content = resp_priv.read().decode("utf-8")
+            assert "Maxfiylik siyosati" in priv_content or "Политика конфиденциальности" in priv_content, "Invalid /privacy HTML content"
+        print("26. Clean URL /privacy serves Privacy Policy HTML -> SUCCESS")
+
         print("\n==========================================")
-        print("  NATIJA: 25/25 PASS (100% SUCCESS)       ")
+        print("  NATIJA: 26/26 PASS (100% SUCCESS)       ")
         print("==========================================\n")
     finally:
         proc.terminate()

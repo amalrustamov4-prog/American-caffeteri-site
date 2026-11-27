@@ -76,8 +76,8 @@ export default async function handler(req, res) {
     }
 
     const fullName = `${firstName} ${lastName}`.trim();
-    const botToken = (process.env.BOT_TOKEN || '9019814630:AAG7-0N0tbjiuWINPaiVJLNCYJhly9I_gyg').trim();
-    const groupId = (process.env.GROUP_CHAT_ID || '-1004439148911').trim();
+    const botToken = (process.env.BOT_TOKEN || '').trim();
+    const groupId = (process.env.GROUP_CHAT_ID || '').trim();
 
     let card = `👤 <b>YANGI MIJOZ RO'YXATDAN O'TDI / РЕГИСТРАЦИЯ</b>\n`;
     card += `━━━━━━━━━━━━━━━━━━━━━\n`;
@@ -96,21 +96,25 @@ export default async function handler(req, res) {
     card += `🕒 <b>Vaqt:</b> ${new Date().toLocaleString('ru-RU', { timeZone: 'Asia/Tashkent' })}`;
 
     let groupNotified = false;
-    try {
-      const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: groupId,
-          text: card,
-          parse_mode: 'HTML',
-          disable_web_page_preview: true
-        })
-      });
-      const tgData = await tgRes.json();
-      groupNotified = tgData.ok === true;
-    } catch (e) {
-      console.error('Telegram API notification error:', e);
+    if (botToken && groupId) {
+      try {
+        const tgRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: groupId,
+            text: card,
+            parse_mode: 'HTML',
+            disable_web_page_preview: true
+          })
+        });
+        const tgData = await tgRes.json();
+        groupNotified = tgData.ok === true;
+      } catch (e) {
+        console.error('Telegram API notification error:', e);
+      }
+    } else {
+      console.warn('BOT_TOKEN or GROUP_CHAT_ID is not configured in process.env, skipping Telegram notification.');
     }
 
     return res.status(200).json({

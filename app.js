@@ -2710,6 +2710,8 @@ ${savedOrder.comment ? `💬 Комментарий: ${savedOrder.comment}\n` : 
         closeDishModal();
         closeReceiptModal();
         closeCartDrawer();
+        const splash = document.getElementById('welcome-splash-modal');
+        if (splash) splash.classList.add('hidden');
         document.querySelectorAll('.modal-overlay.open').forEach((m) => m.classList.remove('open'));
         document.body.style.overflow = '';
       }

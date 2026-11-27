@@ -47,11 +47,12 @@ def should_exclude(rel_path: str) -> bool:
     fname = os.path.basename(rel_path)
     if fname in EXCLUDE_FILES:
         return True
-    # Exclude secret .env files while keeping .env.example
-    if fname.startswith(".env") and not fname.endswith(".example"):
+    fname_lower = fname.lower()
+    # Exclude all .env files
+    if fname_lower.startswith(".env"):
         return True
-    _, ext = os.path.splitext(fname)
-    if ext in EXCLUDE_EXTS:
+    # Exclude databases and secrets
+    if any(fname_lower.endswith(ext) for ext in EXCLUDE_EXTS):
         return True
     return False
 

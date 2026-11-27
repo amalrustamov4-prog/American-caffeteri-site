@@ -213,6 +213,7 @@ const server = http.createServer(async (req, res) => {
   let relativePath = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
   if (relativePath === 'admin') relativePath = 'admin.html';
   if (relativePath === 'courier') relativePath = 'courier.html';
+  if (relativePath === 'privacy') relativePath = 'privacy.html';
 
   const relLower = relativePath.toLowerCase();
   const blockedExactFiles = new Set([

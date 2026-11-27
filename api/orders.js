@@ -90,8 +90,11 @@ export default async function handler(req, res) {
       const id = String(it.id || '').trim().slice(0, 60);
       const q = Math.max(1, Math.min(99, Number(it.qty || it.quantity || 1)));
       const catEntry = SERVER_CATALOG[id];
-      const p = catEntry ? catEntry.price : Math.max(1000, Number(it.price || 0));
-      const itemName = catEntry ? catEntry.name : String(it.name || 'Taom').trim().slice(0, 100);
+      if (!catEntry) {
+        return res.status(400).json({ ok: false, error: "Menyuda bunday taom topilmadi" });
+      }
+      const p = catEntry.price;
+      const itemName = catEntry.name;
       items.push({
         id,
         name: itemName,
@@ -168,8 +171,8 @@ export default async function handler(req, res) {
     const numericId = Math.floor(1000 + (Date.now() % 9000));
     const orderCode = `#AC-${numericId}`;
 
-    const botToken = (process.env.BOT_TOKEN || '9019814630:AAG7-0N0tbjiuWINPaiVJLNCYJhly9I_gyg').trim();
-    const groupId = (process.env.GROUP_CHAT_ID || '-1004439148911').trim();
+    const botToken = (process.env.BOT_TOKEN || '').trim();
+    const groupId = (process.env.GROUP_CHAT_ID || '').trim();
 
     const isDoZakaz = Boolean(payload.append_to_order_id);
     let orderCard = isDoZakaz
@@ -233,6 +236,11 @@ export default async function handler(req, res) {
         const tgData = await tgRes.json();
         groupNotified = tgData.ok === true;
       } catch (e) {
+        console.error('Telegram API notification error:', e);
+      }
+    } else {
+      console.warn('BOT_TOKEN or GROUP_CHAT_ID is not configured in process.env, skipping Telegram notification.');
+    }
         console.error('Telegram API notification error:', e);
       }
     }

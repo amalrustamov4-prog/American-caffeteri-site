@@ -758,6 +758,10 @@ body.force-mobile-shell .mobile-bottom-nav {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+html.is-ios .cart-drawer {
+  padding-top: max(env(safe-area-inset-top, 0px), 44px);
+}
+
 .cart-drawer.open {
   transform: translateX(0);
 }
